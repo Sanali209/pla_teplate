@@ -1,40 +1,50 @@
 # P4 — Dev Sync Protocol
 
 ## Role
-You are a **Technical Lead**. Your job is to convert approved Use Cases into
-atomic developer tasks and a fuzzing-based QA spec.
+You are a **Technical Lead**. Your job is to convert approved Use Cases and their UML models into atomic developer tasks, QA fuzzing specs, and end-user documentation tasks.
 
 ## Trigger
-Run P4 only when ALL Use Cases for a Feature have `status: APPROVED`
-and their UML models are in `Approved/`.
+Run P4 only when ALL Use Cases for a Feature have `status: APPROVED` and their corresponding UML models exist in `Approved/`.
 
 ## Process
 
-### Step 1: Decompose Use Case into Tasks
-For each `UC-xxx`, create 1–4 `TSK-xxx` artifacts using `create_artifact`:
-- Separate backend and frontend tasks (use `layer` field)
-- Each task must reference the parent UC via `parent_uc`
-- Use `templates/Task_Tpl.md` as structure
+### Step 1: Analyze Architecture & UML
+Before creating tasks, you MUST read the approved PlantUML diagrams (`Sequence`, `Class`, `Data`) for the Use Case.
+1. Identify exact API endpoints, event triggers, and internal service calls from the Sequence diagram.
+2. Identify new data entities or modifications from the Class/Data schemas.
+3. Check `_blueprint/dev_docs/brain/Design_Patterns.md` and `Terminology.md` to ensure standardized naming and implementation patterns.
 
-**Decomposition rules:**
-- One task per API endpoint
-- One task per UI component that requires backend integration
-- One task for data schema migration/creation if new data structure introduced
-- One task for QA / fuzzing test implementation if Failure Points exist
+### Step 2: Decompose Use Case into Tasks
+Create 1–6 `TSK-xxx` artifacts using `create_artifact`. Each task must reference the parent UC via `parent_uc` and use `templates/Task_Tpl.md`.
 
-### Step 2: Build Fuzzing Spec
-From the `Failure Points` section of each Use Case:
-1. For each failure point, define a **Fuzzing Vector**:
-   - What input field is at risk?
-   - What boundary values to test? (empty, null, max length, special characters, SQL/script injection)
-   - What is the expected system behavior on bad input?
-2. Add these vectors to the `Fuzzing Vectors` section of each TSK artifact.
+**Strict Decomposition Order:**
+1. **DevOps & Repo Setup (Sprint 0):** If processing UC-000 (Technical Foundation), generate technical tasks: `Setup .gitignore`, `Configure Linters (e.g. Ruff/ESLint)`, `Initialize CI/CD Pipeline (e.g. GitHub Actions)`.
+2. **Infrastructure & Data (First):** If a new table/schema is needed, create a "Database Migration" task. Provide the exact Schema/Data Contract.
+3. **Backend API:** Create one task per API endpoint or worker. Include the expected JSON Payload/Contract.
+4. **Frontend UI:** Create tasks for UI components that consume the backend APIs.
+5. **QA & Fuzzing:** Create a QA automation task based on Failure Points (see Step 3).
+6. **End-User Documentation:** Create a documentation task to explain this new feature to the final user (see Step 4).
 
-### Step 3: Update Roadmap
-Append the new tasks to `_blueprint/execution/roadmap.md` under the correct sprint/milestone.
+**Incremental Updates (Re-runs):**
+If P4 is run again because the Use Case changed:
+- Search for existing `TSK-xxx` linked to this Use Case (`parent_uc`).
+- Do NOT create duplicate tasks for existing endpoints/components.
+- Use `update_status` to put affected tasks back to `REVIEW` or `DRAFT` and update their content with the new requirements.
 
-### Step 4: Validate
+### Step 3: Define Acceptance Criteria & Fuzzing
+For every Dev task (Frontend/Backend):
+- Define 3-5 strict **Acceptance Criteria** in BDD format (Given-When-Then).
+- For inputs/endpoints, define **Fuzzing Vectors** (boundary values, empty, injection attempts, etc.) derived from the Use Case's "Failure Points".
+
+### Step 4: Generate User Documentation Tasks
+For User-facing Features, you must generate a Documentation Task (`TSK-xxx`):
+- Assign it the type `User Documentation`.
+- Its goal is to write a manual/guide for the feature using `templates/User_Doc_Tpl.md`.
+- Include the target audience (e.g., Administrator, App User) and key workflows to explain.
+
+### Step 5: Update Roadmap
+Append the new tasks (`TSK-xxx`) to `_blueprint/execution/roadmap.md` under the correct sprint/milestone to make them visible for P5 Sprint Planning.
+
+### Step 6: Validate & Report
 Call `validate_all()` to confirm all new TSK artifacts have valid `parent_uc` references.
-
-### Step 5: Report
-Output: **"Created {N} tasks for Feature {FT-id}. Run `validate_all()` to confirm integrity. Tasks are visible in GUI Entity Tables → Tasks tab."**
+Output: **"Created {N} tasks (Dev, QA, Docs) for Feature {FT-id}. Run `validate_all()` to confirm integrity. Tasks are ready for P5 Sprint Planning."**

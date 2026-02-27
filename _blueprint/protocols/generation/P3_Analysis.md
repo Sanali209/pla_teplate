@@ -21,6 +21,12 @@ For each scenario, create a `UC-xxx` using `create_artifact`:
 - Fill `actors` from the Feature's user roles
 - Document `Failure Points` — these become Fuzzing Vectors in P4
 
+**Incremental Updates (Re-runs):**
+If this Feature was modified and P3 is being re-run:
+- Search existing `UC-xxx` artifacts linked to this Feature.
+- If a Scenario already has a Use Case, DO NOT duplicate it. Update the existing file content to reflect new requirements and change status to `REVIEW`.
+- Only create new `UC-xxx` files for completely new scenarios.
+
 ### Step 3: Draw User Flow (Mermaid)
 Embed a `graph TD` or `sequenceDiagram` in each UC body.
 Rules:

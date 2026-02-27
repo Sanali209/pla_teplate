@@ -27,3 +27,4 @@ revision_count: 1
 
 ## Out of Scope
 {{What is explicitly NOT part of this feature to prevent scope creep.}}
+## Critique History

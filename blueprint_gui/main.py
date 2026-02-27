@@ -350,78 +350,193 @@ class ArtifactWorkbenchPanel(QWidget):
         self._load(path, meta)
 
 
+
 # ---------------------------------------------------------------------------
-# Panel 4: PlantUML Viewer
+# Panel 2: PlantUML Viewer + Critique
 # ---------------------------------------------------------------------------
+
+# Bundled JAR lives in blueprint_gui/ next to main.py
+_GUI_DIR  = Path(__file__).parent
+_PUML_JAR = _GUI_DIR / "plantuml-1.2026.1.jar"
+
+
+def _find_java() -> str:
+    """Return path to java executable, searching common locations."""
+    import shutil as _shutil, os as _os
+    j = _shutil.which("java")
+    if j:
+        return j
+    jh = _os.environ.get("JAVA_HOME")
+    if jh:
+        c = Path(jh) / "bin" / "java.exe"
+        if c.exists():
+            return str(c)
+    for base in (
+        Path("C:/Program Files/Eclipse Adoptium"),
+        Path("C:/Program Files/Java"),
+        Path("C:/Program Files/Microsoft"),
+        Path("C:/Program Files/Zulu"),
+    ):
+        if base.exists():
+            for p in sorted(base.iterdir(), reverse=True):
+                c = p / "bin" / "java.exe"
+                if c.exists():
+                    return str(c)
+    return "java"
+
 
 class PlantUMLPanel(QWidget):
+    """Panel 2: PlantUML diagram viewer (bundled JAR) + diagram critique."""
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        layout = QHBoxLayout(self)
-        splitter = QSplitter(Qt.Horizontal)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        main_split = QSplitter(Qt.Horizontal)
 
+        # ── LEFT: file list ───────────────────────────────────────────────────
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(4, 4, 0, 4)
+        ll.addWidget(QLabel("UML Diagrams:"))
         self._file_list = QListWidget()
         self._file_list.itemClicked.connect(self._render_diagram)
-        splitter.addWidget(self._file_list)
+        ll.addWidget(self._file_list)
+        jar_ok  = _PUML_JAR.exists()
+        jar_lbl = QLabel(("✅ " if jar_ok else "❌ ") + _PUML_JAR.name)
+        jar_lbl.setStyleSheet("color:#8ab; font-size:9px;")
+        ll.addWidget(jar_lbl)
+        main_split.addWidget(left)
 
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
+        # ── RIGHT: image (top) + critique (bottom) ────────────────────────────
+        right_split = QSplitter(Qt.Vertical)
+
+        img_w = QWidget()
+        il = QVBoxLayout(img_w)
+        il.setContentsMargins(4, 4, 4, 0)
+        top_bar = QHBoxLayout()
         self._status_label = QLabel("Select a diagram")
-        self._status_label.setStyleSheet("color: #8ab;")
-        self._export_btn = QPushButton("Export PNG…")
-        self._export_btn.clicked.connect(self._export_png)
-        btn_row = QHBoxLayout()
-        btn_row.addWidget(self._status_label)
-        btn_row.addWidget(self._export_btn)
-        right_layout.addLayout(btn_row)
-
+        self._status_label.setStyleSheet("color:#8ab;")
+        top_bar.addWidget(self._status_label, stretch=1)
+        exp_btn = QPushButton("💾 Export PNG…")
+        exp_btn.clicked.connect(self._export_png)
+        top_bar.addWidget(exp_btn)
+        il.addLayout(top_bar)
         self._scroll = QScrollArea()
         self._img_label = QLabel("No diagram rendered.")
         self._img_label.setAlignment(Qt.AlignCenter)
         self._scroll.setWidget(self._img_label)
         self._scroll.setWidgetResizable(True)
-        right_layout.addWidget(self._scroll)
-        splitter.addWidget(right)
-        splitter.setSizes([200, 700])
-        layout.addWidget(splitter)
+        il.addWidget(self._scroll)
+        right_split.addWidget(img_w)
 
-        self._current_png: Path | None = None
+        # critique
+        crit_w = QWidget()
+        cl = QVBoxLayout(crit_w)
+        cl.setContentsMargins(4, 2, 4, 4)
+        self._diag_label = QLabel("No diagram selected")
+        self._diag_label.setStyleSheet(
+            "font-weight:bold; color:#8ab; background:#16213e;"
+            " border-radius:4px; padding:4px;"
+        )
+        cl.addWidget(self._diag_label)
+        crit_split = QSplitter(Qt.Horizontal)
+
+        fb_w = QWidget()
+        fl = QVBoxLayout(fb_w)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.addWidget(QLabel("Feedback:"))
+        self._feedback_input = QPlainTextEdit()
+        self._feedback_input.setPlaceholderText("Describe diagram issues…")
+        self._feedback_input.setMaximumHeight(80)
+        fl.addWidget(self._feedback_input)
+        btn_bar = QHBoxLayout()
+        for lbl, act in (("✅ APPROVE", "APPROVED"), ("🔁 REQUEST CHANGE", "NEEDS_FIX")):
+            b = QPushButton(lbl)
+            b.setStyleSheet(
+                "QPushButton{background:#16213e;border:1px solid #2a3a5a;"
+                "color:#8ab;border-radius:4px;padding:4px 10px;}"
+                "QPushButton:hover{background:#1a2a4a;color:#d0e8ff;}"
+            )
+            b.clicked.connect(lambda checked=False, a=act: self._submit(a))
+            btn_bar.addWidget(b)
+        fl.addLayout(btn_bar)
+        crit_split.addWidget(fb_w)
+
+        hist_w = QWidget()
+        hl = QVBoxLayout(hist_w)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.addWidget(QLabel("Feedback History:"))
+        self._history_browser = QTextBrowser()
+        hl.addWidget(self._history_browser)
+        crit_split.addWidget(hist_w)
+        crit_split.setSizes([500, 400])
+        cl.addWidget(crit_split)
+        right_split.addWidget(crit_w)
+        right_split.setSizes([560, 190])
+
+        main_split.addWidget(right_split)
+        main_split.setSizes([200, 900])
+        root.addWidget(main_split)
+
+        self._current_png:    Path | None = None
+        self._current_source: Path | None = None
         self._tmp_dir = tempfile.mkdtemp()
+        self._java    = _find_java()
+
+    # ── Refresh ───────────────────────────────────────────────────────────────
 
     def refresh(self) -> None:
         self._file_list.clear()
         uml_root = BLUEPRINT_ROOT / "dev_docs" / "architecture" / "UML_Models"
-        for puml_file in sorted(uml_root.rglob("*.puml")):
-            folder = "Approved" if "Approved" in str(puml_file) else "Draft"
-            item = QListWidgetItem(f"[{folder}] {puml_file.stem}")
-            item.setData(Qt.UserRole, puml_file)
+        if not uml_root.exists():
+            return
+        for pf in sorted(uml_root.rglob("*.puml")):
+            tag  = "✅" if "Approved" in str(pf) else "📝"
+            item = QListWidgetItem(f"{tag} {pf.stem}")
+            item.setData(Qt.UserRole, pf)
             self._file_list.addItem(item)
-        # Also detect @startuml blocks inside .md files
-        for md_file in sorted(uml_root.rglob("*.md")):
-            text = md_file.read_text(encoding="utf-8") if md_file.exists() else ""
-            if "@startuml" in text:
-                folder = "Approved" if "Approved" in str(md_file) else "Draft"
-                item = QListWidgetItem(f"[{folder}] {md_file.stem} (embedded)")
-                item.setData(Qt.UserRole, md_file)
+        for mf in sorted(uml_root.rglob("*.md")):
+            if mf.exists() and "@startuml" in mf.read_text(encoding="utf-8"):
+                tag  = "✅" if "Approved" in str(mf) else "📝"
+                item = QListWidgetItem(f"{tag} {mf.stem} (embedded .md)")
+                item.setData(Qt.UserRole, mf)
                 self._file_list.addItem(item)
 
+    # ── Render ────────────────────────────────────────────────────────────────
+
     def _render_diagram(self, list_item: QListWidgetItem) -> None:
-        source: Path = list_item.data(Qt.UserRole)
-        self._status_label.setText(f"Rendering {source.name}…")
+        orig: Path = list_item.data(Qt.UserRole)
+        self._current_source = orig
+        self._status_label.setText(f"Rendering {orig.name}…")
         QApplication.processEvents()
 
-        out_png = Path(self._tmp_dir) / f"{source.stem}.png"
+        source = self._extract_puml_from_md(orig) if orig.suffix == ".md" else orig
+        if source is None:
+            self._status_label.setText("No @startuml block found.")
+            return
+
+        if not _PUML_JAR.exists():
+            self._status_label.setText(f"❌ JAR not found: {_PUML_JAR}")
+            return
+
+        out_dir = Path(self._tmp_dir)
+        out_png = out_dir / f"{source.stem}.png"
+
         try:
-            result = subprocess.run(
-                ["plantuml", "-tpng", "-o", str(out_png.parent), str(source)],
-                capture_output=True, timeout=30,
+            res = subprocess.run(
+                [self._java, "-jar", str(_PUML_JAR), "-tpng", "-o", str(out_dir), str(source)],
+                capture_output=True, timeout=30, text=True,
             )
-            # plantuml outputs to same dir as source by default — look for it
-            candidate = source.parent / f"{source.stem}.png"
-            if candidate.exists():
-                out_png = candidate
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            self._status_label.setText(f"Error: {e}. Is 'plantuml' on PATH?")
+            if res.returncode != 0:
+                err = (res.stderr or res.stdout or "unknown")[:200]
+                self._status_label.setText(f"❌ PlantUML: {err}")
+                return
+        except FileNotFoundError:
+            self._status_label.setText(f"❌ Java not found at: {self._java}")
+            return
+        except subprocess.TimeoutExpired:
+            self._status_label.setText("❌ Render timed out.")
             return
 
         if out_png.exists():
@@ -429,19 +544,59 @@ class PlantUMLPanel(QWidget):
             self._img_label.setPixmap(pix)
             self._img_label.resize(pix.size())
             self._current_png = out_png
-            folder_tag = "Approved" if "Approved" in str(source) else "📝 Draft"
-            self._status_label.setText(f"{folder_tag} | {source.stem}")
+            tag = "✅ Approved" if "Approved" in str(orig) else "📝 Draft"
+            self._status_label.setText(f"{tag}  ·  {orig.stem}")
+            self._diag_label.setText(f"  {orig.stem}  │  {tag}")
+            self._load_history(orig)
         else:
-            self._status_label.setText("Render failed — no PNG produced.")
+            self._status_label.setText("❌ Render failed — no PNG produced.")
+
+    def _extract_puml_from_md(self, md: Path) -> Path | None:
+        text  = md.read_text(encoding="utf-8")
+        start = text.find("@startuml")
+        end   = text.find("@enduml")
+        if start == -1 or end == -1:
+            return None
+        tmp = Path(self._tmp_dir) / f"{md.stem}.puml"
+        tmp.write_text(text[start: end + len("@enduml")], encoding="utf-8")
+        return tmp
+
+    # ── Critique ──────────────────────────────────────────────────────────────
+
+    def _submit(self, action: str) -> None:
+        if not self._current_source:
+            QMessageBox.warning(self, "No diagram", "Render a diagram first.")
+            return
+        art_id  = self._current_source.stem
+        comment = self._feedback_input.toPlainText().strip()
+        fb_path = BLUEPRINT_ROOT / "inbound" / "User_Feedback" / f"FB-{art_id}.md"
+        ts      = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        fb_path.parent.mkdir(parents=True, exist_ok=True)
+        with fb_path.open("a", encoding="utf-8") as f:
+            f.write(f"\n---\ntimestamp: {ts}Z\naction: {action}\n---\n\n{comment}\n")
+        if self._current_source.suffix == ".md":
+            patch_frontmatter(self._current_source, {"status": action})
+        self._diag_label.setText(f"  {art_id}  │  Status: {action}")
+        self._feedback_input.clear()
+        self._load_history(self._current_source)
+
+    def _load_history(self, source: Path) -> None:
+        fb_path = BLUEPRINT_ROOT / "inbound" / "User_Feedback" / f"FB-{source.stem}.md"
+        self._history_browser.setPlainText(
+            fb_path.read_text(encoding="utf-8") if fb_path.exists() else "No feedback history yet."
+        )
+
+    # ── Export ────────────────────────────────────────────────────────────────
 
     def _export_png(self) -> None:
         if not self._current_png or not self._current_png.exists():
             QMessageBox.warning(self, "No image", "Render a diagram first.")
             return
-        dest, _ = QFileDialog.getSaveFileName(self, "Save PNG", str(self._current_png.name), "PNG (*.png)")
+        dest, _ = QFileDialog.getSaveFileName(self, "Save PNG", self._current_png.name, "PNG (*.png)")
         if dest:
             import shutil
             shutil.copy(self._current_png, dest)
+
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +701,9 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("🎯", "P1",  "P1 · Inception",
      "Transform project idea → Goals + Feature Map + Roadmap",
      "protocols/generation/P1_Inception.md"),
+    ("🎯", "P1.5","P1.5 · Goal Decomposition",
+     "Break down high-level Goals into actionable Sub-Goals and initial Features",
+     "protocols/generation/P1_5_Goal_Decomposition.md"),
     ("🔬", "P2",  "P2 · Research",
      "Run R&D spikes to eliminate uncertainty in features",
      "protocols/generation/P2_Research.md"),
@@ -558,6 +716,12 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("⚙️", "P4",  "P4 · Dev Sync",
      "Decompose Use Cases → atomic Tasks + Fuzzing vectors",
      "protocols/generation/P4_Dev_Sync.md"),
+    ("📅", "P5",  "P5 · Sprint Planning",
+     "Organize selected Tasks into an actionable Sprint board",
+     "protocols/generation/P5_Sprint_Planning.md"),
+    ("⚡", "E1",  "E1 · Sprint Execution",
+     "Execute a Task, run tests, and harvest session logs + knowledge",
+     "protocols/execution/E1_Sprint_Execution.md"),
     ("🪞", "R1",  "R1 · Self-Critique",
      "Auto-review an artifact for logic gaps before human review",
      "protocols/review/R1_Agent_Self_Critic.md"),

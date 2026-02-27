@@ -34,7 +34,12 @@ Read files from these directories:
 - {{Technical uncertainty 2}}
 ```
 
-6. **Ask** the user (via `S1_Wait_For_Approval`): "I extracted N goals and M features. Shall I proceed with P1_Inception to create the formal Goal artifacts?"
+6. **Incremental Updates (Re-runs):**
+   - If you have run P0 before and inbound data has changed, do NOT create a second summary block.
+   - Instead, cross-reference previous extractions (from memory or existing Goals) and **merge** the new findings.
+   - Output: "Updated extraction. Added {X} new goals, modified {Y} features."
+
+7. **Ask** the user (via `S1_Wait_For_Approval`): "I extracted N goals and M features. Shall I proceed with P1_Inception to create the formal Goal artifacts?"
 
 ## Rules
 - NEVER invent information not present in the source material.

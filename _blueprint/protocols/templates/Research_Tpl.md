@@ -29,3 +29,4 @@ revision_count: 1
 
 ## Technical Justification (for PRD)
 {{One paragraph suitable for inclusion in the Product Requirements Document.}}
+## Critique History

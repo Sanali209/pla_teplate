@@ -19,7 +19,7 @@ All three components share a single source of truth: the `_blueprint/` directory
 raw idea
     │  P0: Ingestion
     ▼
-Goals (GL-xxx)
+Goals (GL-xxx) ──► P1.5: Sub-Goals if needed
     │  P1: Inception
     ▼
 Features (FT-xxx) ──► [Research Spike (RS-xxx)] if needed
@@ -29,6 +29,12 @@ Use Cases (UC-xxx) ──► UML Diagrams (P3.5)
     │  P4: Dev Sync
     ▼
 Tasks (TSK-xxx) + Fuzzing Vectors
+    │  P5: Sprint Planning
+    ▼
+Sprint Board (IN_PROGRESS)
+    │  E1: Sprint Execution
+    ▼
+DONE (Code, Tests, Session Logs) + Knowledge Harvest
 ```
 
 Every artifact contains YAML metadata linking it to its parent, enabling full **reverse-path traceability** (any task → its use case → its feature → its goal).
@@ -41,7 +47,7 @@ Every artifact contains YAML metadata linking it to its parent, enabling full **
 📁 _blueprint/                  ← Single source of truth (all planning docs)
 │   ├── protocols/
 │   │   ├── meta/               ← Rules: Metadata schema, Naming, Validation, State machine
-│   │   ├── generation/         ← Agent instructions: P0, P1, P2, P3, P3.5, P4
+│   │   ├── generation/         ← Agent instructions: P0, P1, P1.5, P2, P3, P3.5, P4, P5
 │   │   ├── review/             ← Review protocols: R1 (self-critic), R2, R3, R4
 │   │   ├── interactive/        ← Pause gates: S1 (approval), S2 (conflict), S3 (update)
 │   │   ├── knowledge/          ← Harvesting: H1 (patterns), H2 (wiki)
@@ -61,8 +67,8 @@ Every artifact contains YAML metadata linking it to its parent, enabling full **
 │   ├── artifact_index.py       ← Live artifact index builder
 │   ├── validate_traceability.py← Gate rule enforcer
 │   ├── resources.py            ← MCP Resources (blueprint://index, pending, brain)
-│   ├── prompts.py              ← MCP Prompts (P0–P4, meta_rules, self_critic)
-│   ├── agent_tools.py          ← MCP Tools (create_artifact, update_status, validate_all, run_self_critique)
+│   ├── prompts.py              ← MCP Prompts (P0–P5, E1, meta_rules, self_critic)
+│   ├── agent_tools.py          ← MCP Tools (create_artifact, update_status, get_backlog, start_sprint...)
 │   └── requirements.txt
 
 📁 blueprint_gui/               ← PySide2 Desktop GUI (human interface)
@@ -120,8 +126,8 @@ python server.py
 
 The server exposes:
 - **3 Resources** — live JSON feeds: artifact index, pending review queue, knowledge base
-- **8 Prompts** — protocol files mapped to named prompts (`p0_ingestion` through `p4_dev_sync`, `meta_rules`, `self_critic`, `fix_protocol`)
-- **4 Tools** — `create_artifact`, `update_status`, `validate_all`, `run_self_critique`
+- **Prompts** — protocol files mapped to named prompts (`p0_ingestion` through `e1_sprint_execution`, `meta_rules`, `self_critic`, `fix_protocol`)
+- **9 Tools** — `create_artifact`, `update_status`, `validate_all`, `run_self_critique`, `get_backlog`, `start_sprint`, `log_session`, `harvest_knowledge`, `complete_task`
 
 ---
 

@@ -10,27 +10,39 @@ into formal `Goal` artifacts and a high-level `Roadmap`.
 
 ## Process
 
-### Step 1: Create Goal Artifacts
-For each identified goal, create a file using `create_artifact` MCP tool:
+### Step 1: Create Sprint 0 (Technical Foundation)
+Every project requires a technical base (Repo setup, CI/CD, Linters). Before extracting business goals, ALWAYS create:
+1. `type: Goal`, `id: GL-000`, `title: Technical Foundation & DevOps`, `kpi: Infrastructure is ready for development`.
+2. `type: Feature`, `id: FT-000`, `parent_goal: GL-000`, `title: Project Initialization & Pipeline`.
+
+### Step 2: Create Business Goal Artifacts
+For each identified business goal from P0, create a file using `create_artifact` MCP tool:
 - `type: Goal`
 - `id: GL-{next_number}` (check artifact index for next available ID)
 - Use `templates/Goal_Tpl.md` as the structure guide
 - Fill `kpi` with a **measurable metric**, not a vague statement
 
-### Step 2: Create Feature Map
-For each goal, identify 2–5 high-level Features. Create `FT-xxx` artifacts:
+### Step 3: Create Feature Map
+For each business goal, identify 2–5 high-level Features. Create `FT-xxx` artifacts:
 - Set `parent_goal` to the linked GL ID
 - Mark `research_required: true` for any Feature with unknown technical approach
 - Keep titles concise: `Auth Module`, `PDF Generator`, `Payment Flow`
 
-### Step 3: Populate Roadmap
+### Step 3.5: Incremental Updates (Idempotency)
+If you are re-running P1 because inbound data changed:
+- **DO NOT** create duplicate Goals or Features.
+- Check the artifact index first (`ls _blueprint/dev_docs/brain/` and `_blueprint/dev_docs/logic/`).
+- If a Goal/Feature already exists for a concept, use `update_status` to move it back to `DRAFT` or `REVIEW` if its scope changed, and update its content.
+- Only create NEW (`GL-xxx`, `FT-xxx`) artifacts for genuinely new concepts.
+
+### Step 4: Populate Roadmap
 Write `_blueprint/execution/roadmap.md`:
-- Organize Features by milestone/phase
+- Organize Features by milestone/phase (Put FT-000 in Milestone 0 or Sprint 0)
 - Use a simple table format (the GUI Roadmap panel will render it)
 
-### Step 4: Request Approval
+### Step 5: Request Approval
 Call `update_status(id, "REVIEW")` on all created Goals.
-Then output: **"I created {N} goals and {M} features. Please review them in the GUI Entity Tables and approve via the Critique Panel before I proceed to P2/P3."**
+Then output: **"I created GL-000 and {N} business goals and {M} features. Please review them in the GUI Entity Tables and approve via the Critique Panel before I proceed."**
 
 ## Constraints
 - Every Feature MUST reference a Goal via `parent_goal`.

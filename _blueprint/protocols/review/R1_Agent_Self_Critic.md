@@ -45,4 +45,9 @@ Write the critique as a structured report:
 - [ ] Needs revision before human review (HIGH issues found)
 ```
 
-If HIGH issues are found, fix them BEFORE calling `update_status(id, "REVIEW")`.
+## Step 2: Document Response in Artifact
+Even if no HIGH issues are found (or after fixing any HIGH issues), you MUST document this self-critique run inside the artifact itself:
+1. Append a `## Critique History` section (if it doesn't exist) to the bottom of the artifact.
+2. Add a timestamped entry: `**[Agent Self-Critique]** - {Verdict}. {Short summary of issues found and how they were addressed, or explicitly state "No changes required"}`.
+
+If HIGH issues are found, fix them and update the artifact BEFORE calling `update_status(id, "REVIEW")`.

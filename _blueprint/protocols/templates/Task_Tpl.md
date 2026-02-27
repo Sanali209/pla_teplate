@@ -19,6 +19,11 @@ revision_count: 1
 ## Description
 {{What exactly needs to be built or done? Be precise enough for a developer to estimate.}}
 
+## Implementation Steps
+*(To be filled by the Executing Agent during E1_Sprint_Execution)*
+- [ ] Step 1...
+- [ ] Step 2...
+
 ## Acceptance Criteria
 - [ ] {{Criterion 1 — testable condition}}
 - [ ] {{Criterion 2}}
@@ -33,3 +38,5 @@ revision_count: 1
 - [ ] Unit tests pass
 - [ ] Linked Use Case scenario manually verified
 - [ ] No new validation errors from `validate_all()`
+
+## Critique History

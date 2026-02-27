@@ -210,6 +210,133 @@ async def _run_self_critique(args: dict) -> list[TextContent]:
 
 
 # ---------------------------------------------------------------------------
+# Sprint & Execution Tools
+# ---------------------------------------------------------------------------
+
+async def _get_backlog(_args: dict) -> list[TextContent]:
+    tool_call("get_backlog", {})
+    backlog_dir = BLUEPRINT_ROOT / "execution" / "backlog"
+    tasks = []
+    if backlog_dir.exists():
+        for f in backlog_dir.glob("TSK-*.md"):
+            meta, _ = read_frontmatter(f)
+            if meta:
+                tasks.append(
+                    f"- {meta.get('id', 'Unknown')}: {meta.get('title', 'No Title')} "
+                    f"[Status: {meta.get('status', 'UNKNOWN')}]"
+                )
+    if not tasks:
+        return _text("Backlog is empty.")
+    return _text("Backlog Tasks:\n" + "\n".join(tasks))
+
+
+async def _start_sprint(args: dict) -> list[TextContent]:
+    task_ids = args.get("task_ids", [])
+    goal = args.get("goal", "No goal specified.")
+    tool_call("start_sprint", {"task_ids": task_ids, "goal": goal})
+    
+    idx = build_index()
+    valid_tasks = []
+    for tid in task_ids:
+        entry = idx.get(tid)
+        if not entry or entry["type"] != "Task":
+            return _err_text(f"Task '{tid}' not found or is not a Task.")
+        valid_tasks.append(entry)
+        
+    for entry in valid_tasks:
+        patch_frontmatter(entry["path"], {
+            "status": "IN_PROGRESS",
+            "last_updated": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        })
+        status_change(entry["meta"].get("id"), entry["meta"].get("status"), "IN_PROGRESS")
+        
+    sprint_file = BLUEPRINT_ROOT / "execution" / "sprint_current.md"
+    sprint_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    lines = [
+        f"# Current Sprint",
+        f"**Goal:** {goal}\n",
+        f"## Tasks",
+    ]
+    for tid in task_ids:
+        lines.append(f"- [ ] {tid}")
+        
+    sprint_file.write_text("\n".join(lines), encoding="utf-8")
+    tool_ok("start_sprint", f"Started sprint with {len(task_ids)} tasks.")
+    return _text(f"✅ Sprint started successfully with tasks: {', '.join(task_ids)}")
+
+
+async def _log_session(args: dict) -> list[TextContent]:
+    task_id = args.get("task_id", "General")
+    action = args.get("action", "")
+    result = args.get("result", "")
+    tool_call("log_session", {"task_id": task_id})
+    
+    log_dir = BLUEPRINT_ROOT / "execution" / "session_logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    ts = datetime.datetime.utcnow().strftime("%H:%M:%S")
+    log_file = log_dir / f"{today}.md"
+    
+    entry = f"\n### [{ts}Z] Task: {task_id}\n**Action:** {action}\n**Result:** {result}\n---\n"
+    
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(entry)
+        
+    tool_ok("log_session", f"Logged session action for {task_id}")
+    return _text(f"✅ Session log appended to {log_file.name}")
+
+
+async def _harvest_knowledge(args: dict) -> list[TextContent]:
+    topic = args.get("topic", "Unknown")
+    description = args.get("description", "")
+    code_snippet = args.get("code_snippet", "")
+    tool_call("harvest_knowledge", {"topic": topic})
+    
+    k_dir = BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw"
+    k_dir.mkdir(parents=True, exist_ok=True)
+    learnings_file = k_dir / "new_learnings.md"
+    
+    entry = f"\n## {topic}\n{description}\n"
+    if code_snippet:
+        entry += f"```\n{code_snippet}\n```\n"
+    entry += "---\n"
+    
+    with learnings_file.open("a", encoding="utf-8") as f:
+        f.write(entry)
+        
+    tool_ok("harvest_knowledge", f"Harvested: {topic}")
+    return _text(f"✅ Knowledge harvested: {topic}")
+
+
+async def _complete_task(args: dict) -> list[TextContent]:
+    task_id = args.get("task_id", "")
+    tool_call("complete_task", {"task_id": task_id})
+    
+    idx = build_index()
+    entry = idx.get(task_id)
+    if not entry or entry["type"] != "Task":
+        return _err_text(f"Task '{task_id}' not found.")
+        
+    old_status = entry["meta"].get("status", "UNKNOWN")
+    patch_frontmatter(entry["path"], {
+        "status": "DONE",
+        "last_updated": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    })
+    status_change(task_id, old_status, "DONE")
+    
+    sprint_file = BLUEPRINT_ROOT / "execution" / "sprint_current.md"
+    if sprint_file.exists():
+        content = sprint_file.read_text(encoding="utf-8")
+        content = content.replace(f"- [ ] {task_id}", f"- [x] {task_id}")
+        sprint_file.write_text(content, encoding="utf-8")
+        
+    tool_ok("complete_task", f"Completed {task_id}")
+    return _text(f"✅ Task {task_id} marked as DONE.")
+
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -218,6 +345,11 @@ _TOOL_HANDLERS = {
     "update_status":     _update_status,
     "validate_all":      _validate_all,
     "run_self_critique": _run_self_critique,
+    "get_backlog":       _get_backlog,
+    "start_sprint":      _start_sprint,
+    "log_session":       _log_session,
+    "harvest_knowledge": _harvest_knowledge,
+    "complete_task":     _complete_task,
 }
 
 _TOOL_SCHEMAS: list[Tool] = [
@@ -269,6 +401,60 @@ _TOOL_SCHEMAS: list[Tool] = [
                 "artifact_id": {"type": "string"},
             },
             "required": ["artifact_id"],
+        },
+    ),
+    Tool(
+        name="get_backlog",
+        description="Scans the backlog and returns a list of Tasks with their statuses.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="start_sprint",
+        description="Start a new sprint with selected tasks and a goal.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "task_ids": {"type": "array", "items": {"type": "string"}, "description": "List of Task IDs"},
+                "goal":     {"type": "string", "description": "Goal of the sprint"},
+            },
+            "required": ["task_ids", "goal"],
+        },
+    ),
+    Tool(
+        name="log_session",
+        description="Log an action and result to the daily session log.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "Associated Task ID, or 'General'"},
+                "action":  {"type": "string", "description": "What was done"},
+                "result":  {"type": "string", "description": "Outcome or findings"},
+            },
+            "required": ["task_id", "action", "result"],
+        },
+    ),
+    Tool(
+        name="harvest_knowledge",
+        description="Record newly discovered concepts, API caveats, or patterns.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "topic":        {"type": "string", "description": "Topic name"},
+                "description":  {"type": "string", "description": "Detailed explanation"},
+                "code_snippet": {"type": "string", "description": "Optional code snippet demonstrating the concept"},
+            },
+            "required": ["topic", "description"],
+        },
+    ),
+    Tool(
+        name="complete_task",
+        description="Mark a Task as DONE and check it off in the current sprint board.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "Task ID to complete"},
+            },
+            "required": ["task_id"],
         },
     ),
 ]

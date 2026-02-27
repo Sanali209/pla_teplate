@@ -27,11 +27,12 @@ Extract structured change requests from the human's feedback text:
 
 For CASCADE changes, list all affected artifacts and confirm with user before proceeding.
 
-### Step 3: Apply Changes
-1. Load the current artifact content
-2. Apply each change request
-3. Increment `revision_count` in YAML frontmatter
-4. Run **R1 Self-Critique** on the updated artifact
+### Step 3: Apply Changes & Document Response
+1. Load the current artifact content.
+2. Apply each change request.
+3. **CRITICAL:** Append a `## Critique History` section (if it doesn't exist) to the bottom of the artifact. Add a timestamped entry explicitly stating your response to *every single point* of the human's feedback. If a point did not require a change, you MUST explain why in this section.
+4. Increment `revision_count` in YAML frontmatter.
+5. Run **R1 Self-Critique** on the updated artifact.
 
 ### Step 4: Update Status
 Call `update_status(artifact_id, "REVIEW")` to resubmit for human approval.

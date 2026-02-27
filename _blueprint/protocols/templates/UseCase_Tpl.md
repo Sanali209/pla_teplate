@@ -51,3 +51,4 @@ graph TD
 <!-- Agent: populate after P4_Dev_Sync generates TSK artifacts -->
 - [ ] [TSK-xxx](../../execution/backlog/TSK-xxx.md) — Backend implementation
 - [ ] [TSK-xxx](../../execution/backlog/TSK-xxx.md) — Frontend implementation
+## Critique History
