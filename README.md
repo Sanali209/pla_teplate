@@ -16,7 +16,6 @@ Blueprint Studio is a structured planning framework for software projects. It en
 All three components share a single source of truth: the `_blueprint/` directory.
 
 ```
-raw idea
     │  P0: Ingestion
     ▼
 Goals (GL-xxx) ──► P1.5: Sub-Goals if needed
@@ -35,6 +34,9 @@ Sprint Board (IN_PROGRESS)
     │  E1: Sprint Execution
     ▼
 DONE (Code, Tests, Session Logs) + Knowledge Harvest
+    │
+    ▼
+[Bugs/Issues] ──► P0.5: Bug Triage (Back to Tasks or Use Cases)
 ```
 
 Every artifact contains YAML metadata linking it to its parent, enabling full **reverse-path traceability** (any task → its use case → its feature → its goal).
@@ -47,7 +49,7 @@ Every artifact contains YAML metadata linking it to its parent, enabling full **
 📁 _blueprint/                  ← Single source of truth (all planning docs)
 │   ├── protocols/
 │   │   ├── meta/               ← Rules: Metadata schema, Naming, Validation, State machine
-│   │   ├── generation/         ← Agent instructions: P0, P1, P1.5, P2, P3, P3.5, P4, P5
+│   │   ├── generation/         ← Agent instructions: P0, P0.5, P1, P1.5, P2, P3, P3.5, P4, P5
 │   │   ├── review/             ← Review protocols: R1 (self-critic), R2, R3, R4
 │   │   ├── interactive/        ← Pause gates: S1 (approval), S2 (conflict), S3 (update)
 │   │   ├── knowledge/          ← Harvesting: H1 (patterns), H2 (wiki)
@@ -57,7 +59,7 @@ Every artifact contains YAML metadata linking it to its parent, enabling full **
 │   │   ├── logic/              ← Features (FT-xxx) and Use Cases (UC-xxx)
 │   │   ├── architecture/       ← UML models (Drafts/ and Approved/)
 │   │   └── quality/Review_Logs/
-│   ├── inbound/                ← Raw input: Briefings, MindMaps, Knowledge_Raw, User_Feedback
+│   ├── inbound/                ← Raw input: Briefings, MindMaps, Knowledge_Raw, User_Feedback, Issues_and_Bugs
 │   └── execution/              ← roadmap.md, backlog/ (TSK-xxx), sessions/
 
 📁 _blueprint_server/           ← MCP Server (agent interface)
@@ -127,7 +129,7 @@ python server.py
 The server exposes:
 - **3 Resources** — live JSON feeds: artifact index, pending review queue, knowledge base
 - **Prompts** — protocol files mapped to named prompts (`p0_ingestion` through `e1_sprint_execution`, `meta_rules`, `self_critic`, `fix_protocol`)
-- **9 Tools** — `create_artifact`, `update_status`, `validate_all`, `run_self_critique`, `get_backlog`, `start_sprint`, `log_session`, `harvest_knowledge`, `complete_task`
+- **13 Tools** — `create_artifact`, `update_status`, `validate_all`, `run_self_critique`, `get_backlog`, `start_sprint`, `log_session`, `harvest_knowledge`, `complete_task`, `search_artifacts`, `get_traceability_tree`, `update_brain_doc`, `validate_uml`
 
 ---
 

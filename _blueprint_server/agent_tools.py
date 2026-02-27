@@ -337,6 +337,102 @@ async def _complete_task(args: dict) -> list[TextContent]:
 
 
 # ---------------------------------------------------------------------------
+# Search, Knowledge & Graph Tools (Version 2.0 Enhancements)
+# ---------------------------------------------------------------------------
+
+async def _search_artifacts(args: dict) -> list[TextContent]:
+    atype = args.get("type", "")
+    parent_id = args.get("parent_id", "")
+    tool_call("search_artifacts", {"type": atype, "parent_id": parent_id})
+    
+    idx = build_index()
+    results = []
+    for aid, entry in idx.items():
+        meta = entry.get("meta", {})
+        if atype and entry.get("type") != atype:
+            continue
+            
+        p_uc = meta.get("parent_uc")
+        p_feat = meta.get("parent_feat")
+        p_goal = meta.get("parent_goal")
+        
+        # Check parent match if requested
+        if parent_id:
+            if not (p_uc == parent_id or p_feat == parent_id or p_goal == parent_id):
+                continue
+                
+        results.append(f"- {aid}: {meta.get('title', 'No Title')} [Status: {meta.get('status', 'UNKNOWN')}]")
+        
+    if not results:
+        return _text("No matching artifacts found.")
+    return _text("Found Artifacts:\n" + "\n".join(results))
+
+async def _get_traceability_tree(args: dict) -> list[TextContent]:
+    artifact_id = args.get("artifact_id", "")
+    tool_call("get_traceability_tree", {"artifact_id": artifact_id})
+    
+    idx = build_index()
+    if artifact_id not in idx:
+        return _err_text(f"Artifact '{artifact_id}' not found.")
+        
+    tree = []
+    current_id = artifact_id
+    while current_id and current_id in idx:
+        entry = idx[current_id]
+        meta = entry["meta"]
+        tree.append(f"[{entry['type']}] {current_id}: {meta.get('title', 'No Title')} (Status: {meta.get('status', 'UNKNOWN')})")
+        
+        # Follow pointers up the tree
+        current_id = meta.get("parent_uc") or meta.get("parent_feat") or meta.get("parent_goal")
+        
+    return _text("Traceability Tree (Bottom-Up):\n" + "\n".join(tree))
+
+async def _update_brain_doc(args: dict) -> list[TextContent]:
+    doc_name = args.get("doc_name", "")
+    topic = args.get("topic", "")
+    text = args.get("text", "")
+    tool_call("update_brain_doc", {"doc_name": doc_name})
+    
+    valid_docs = {"Design_Patterns.md", "Anti_Patterns.md", "Terminology.md"}
+    if doc_name not in valid_docs:
+        return _err_text(f"Invalid doc_name. Valid options: {valid_docs}")
+        
+    brain_dir = BLUEPRINT_ROOT / "dev_docs" / "brain"
+    brain_dir.mkdir(parents=True, exist_ok=True)
+    doc_path = brain_dir / doc_name
+    
+    entry = f"\n## {topic}\n{text}\n---\n"
+    with doc_path.open("a", encoding="utf-8") as f:
+        f.write(entry)
+        
+    tool_ok("update_brain_doc", f"Added '{topic}' to {doc_name}")
+    return _text(f"✅ Successfully updated {doc_name}")
+
+async def _validate_uml(args: dict) -> list[TextContent]:
+    content = args.get("content", "")
+    tool_call("validate_uml", {})
+    
+    errors = []
+    if "@startuml" not in content:
+        errors.append("Missing '@startuml' tag.")
+    if "@enduml" not in content:
+        errors.append("Missing '@enduml' tag.")
+        
+    open_brackets = content.count("{")
+    close_brackets = content.count("}")
+    if open_brackets != close_brackets:
+        errors.append(f"Mismatched curly brackets: {open_brackets} open, {close_brackets} close.")
+        
+    if "<html>" in content.lower() or "<b>" in content.lower():
+         errors.append("HTML tags detected. Use standard PlantUML styling instead.")
+         
+    if errors:
+        return _text("❌ UML Validation Failed:\n" + "\n".join(f"- {e}" for e in errors))
+        
+    tool_ok("validate_uml", "Syntax OK")
+    return _text("✅ UML Syntax OK. Safe to save to Drafts.")
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -350,6 +446,10 @@ _TOOL_HANDLERS = {
     "log_session":       _log_session,
     "harvest_knowledge": _harvest_knowledge,
     "complete_task":     _complete_task,
+    "search_artifacts":  _search_artifacts,
+    "get_traceability_tree": _get_traceability_tree,
+    "update_brain_doc":  _update_brain_doc,
+    "validate_uml":      _validate_uml,
 }
 
 _TOOL_SCHEMAS: list[Tool] = [
@@ -455,6 +555,52 @@ _TOOL_SCHEMAS: list[Tool] = [
                 "task_id": {"type": "string", "description": "Task ID to complete"},
             },
             "required": ["task_id"],
+        },
+    ),
+    Tool(
+        name="search_artifacts",
+        description="Search for artifacts by type or parent ID and return a list of matching IDs and statuses.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "description": "Filter by type (Goal, Feature, UseCase, Task, Research)"},
+                "parent_id": {"type": "string", "description": "Filter by parent_id (e.g. GL-001 or FT-001)"},
+            }
+        },
+    ),
+    Tool(
+        name="get_traceability_tree",
+        description="Retrieve the full traceability context (bottom-up tree) for an artifact ID.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "artifact_id": {"type": "string", "description": "The child artifact ID to start from (e.g. TSK-001)"},
+            },
+            "required": ["artifact_id"]
+        },
+    ),
+    Tool(
+        name="update_brain_doc",
+        description="Safely append structured knowledge to a brain document (Design_Patterns.md, Anti_Patterns.md, Terminology.md)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "doc_name": {"type": "string", "description": "Exact name of document (e.g. Design_Patterns.md)"},
+                "topic": {"type": "string", "description": "Heading or topic name"},
+                "text": {"type": "string", "description": "Markdown body describing the pattern/term"},
+            },
+            "required": ["doc_name", "topic", "text"]
+        },
+    ),
+    Tool(
+        name="validate_uml",
+        description="Perform syntax validation on PlantUML code and return structural errors before saving drafts.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The raw PlantUML content including @startuml tags."},
+            },
+            "required": ["content"]
         },
     ),
 ]

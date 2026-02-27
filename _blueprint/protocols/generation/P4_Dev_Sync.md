@@ -27,7 +27,7 @@ Create 1–6 `TSK-xxx` artifacts using `create_artifact`. Each task must referen
 
 **Incremental Updates (Re-runs):**
 If P4 is run again because the Use Case changed:
-- Search for existing `TSK-xxx` linked to this Use Case (`parent_uc`).
+- Call `search_artifacts(type="Task", parent_id="UC-xxx")` using this Use Case's ID.
 - Do NOT create duplicate tasks for existing endpoints/components.
 - Use `update_status` to put affected tasks back to `REVIEW` or `DRAFT` and update their content with the new requirements.
 

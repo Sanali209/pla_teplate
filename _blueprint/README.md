@@ -18,8 +18,9 @@ The Blueprint is divided into strict chronological and functional folders. Do no
 - **`Briefings/`**: Meeting notes, chat logs, user briefs.
 - **`Knowledge_Raw/`**: API documentation, tutorials, external references.
 - **`MindMaps/`**: Visual diagrams, Miro exports.
-- **`User_Feedback/`**: Critiques and corrections provided by the human user.
-- *Agent Action:* Run `P0_Ingestion` to read this and extract Business Intentions.
+- **`User_Feedback/`**: Critiques and corrections provided by human user.
+- **`Issues_and_Bugs/`**: Bug reports, QA tickets, or Sentry logs.
+- *Agent Action:* Run `P0_Ingestion` for Briefings/MindMaps, or `P0_5_Bug_Triage` for Issues_and_Bugs.
 
 ### 2. `dev_docs/` (The Architects' Room)
 - What it is: Where abstract concepts turn into technical reality.
@@ -37,7 +38,7 @@ The Blueprint is divided into strict chronological and functional folders. Do no
 
 ### 4. `protocols/` (The Law)
 - What it is: The instruction manuals for YOU. Never guess what to do; read the protocol.
-- **`generation/`**: Protocols for creating new artifacts (P0-P5).
+- **`generation/`**: Protocols for creating new artifacts (P0-P5, P0.5 Bug Triage).
 - **`execution/`**: Protocols for doing the work (E1).
 - **`review/`**: Protocols for finding errors (R1-R4).
 - **`interactive/`**: Protocols for talking to the human (S1-S3).
@@ -64,6 +65,9 @@ If a file has no parent, it is an orphan and will be rejected by the validation 
 To modify the status of an artifact, do **not** use `replace_file_content`.
 Call the MCP tool `mcp_blueprint_update_status(id="FT-001", new_status="APPROVED")`. The server will safely update the frontmatter and log the transition.
 To create a goal, use `mcp_blueprint_create_artifact()`. 
+**NEVER** use `ls` or `cat` to search for files, use `mcp_blueprint_search_artifacts()`.
+**NEVER** grep for parent relationships, use `mcp_blueprint_get_traceability_tree()`.
+**NEVER** append strings to `brain/` docs, use `mcp_blueprint_update_brain_doc()`.
 
 ### Rule 4: Harvest Knowledge
 When writing code (Phase E1), if you encounter a new error, a weird API quirk, or invent a good architectural pattern, immediately use `mcp_blueprint_harvest_knowledge()` to save it. Do not let your context window expire and lose that knowledge.

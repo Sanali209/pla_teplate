@@ -23,7 +23,7 @@ For each scenario, create a `UC-xxx` using `create_artifact`:
 
 **Incremental Updates (Re-runs):**
 If this Feature was modified and P3 is being re-run:
-- Search existing `UC-xxx` artifacts linked to this Feature.
+- Call `search_artifacts(type="UseCase", parent_id="FT-xxx")` using this Feature's ID to find existing scenarios.
 - If a Scenario already has a Use Case, DO NOT duplicate it. Update the existing file content to reflect new requirements and change status to `REVIEW`.
 - Only create new `UC-xxx` files for completely new scenarios.
 

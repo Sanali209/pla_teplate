@@ -31,8 +31,8 @@ For each business goal, identify 2–5 high-level Features. Create `FT-xxx` arti
 ### Step 3.5: Incremental Updates (Idempotency)
 If you are re-running P1 because inbound data changed:
 - **DO NOT** create duplicate Goals or Features.
-- Check the artifact index first (`ls _blueprint/dev_docs/brain/` and `_blueprint/dev_docs/logic/`).
-- If a Goal/Feature already exists for a concept, use `update_status` to move it back to `DRAFT` or `REVIEW` if its scope changed, and update its content.
+- Call `search_artifacts(type="Goal")` and `search_artifacts(type="Feature")` to check what already exists.
+- If a Goal/Feature already exists for a concept, use `update_status` to move it back to `DRAFT` or `REVIEW` if its scope changed, and update its content via `create_artifact` (overwrite) or patch.
 - Only create NEW (`GL-xxx`, `FT-xxx`) artifacts for genuinely new concepts.
 
 ### Step 4: Populate Roadmap

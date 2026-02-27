@@ -30,11 +30,13 @@ Rules for valid PlantUML:
 - State diagrams: every state must have at least one outgoing transition
 - Never use HTML tags in labels — use `\n` for multi-line labels
 
-### Step 3: Run Self-Critique (R1)
-Before submitting, call `run_self_critique(UML-xxx)` to check:
-- Are all Failure Points from the Use Case represented?
-- Are there any dead-end states?
-- Are all actors from the UC reflected?
+### Step 3: Run Validation & Critique
+Before submitting, you MUST do two checks:
+1. **Syntax Check:** Call the `validate_uml` MCP tool with your generated PlantUML code. If it returns errors, fix them before proceeding.
+2. **Logic Check:** Call `run_self_critique(UML-xxx)` to verify:
+   - Are all Failure Points from the Use Case represented?
+   - Are there any dead-end states?
+   - Are all actors from the UC reflected?
 
 ### Step 4: Save as Draft
 Create the artifact in `dev_docs/architecture/UML_Models/Drafts/`.

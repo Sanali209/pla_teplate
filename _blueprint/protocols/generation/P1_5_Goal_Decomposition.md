@@ -28,6 +28,12 @@ Create `FT-xxx` artifacts:
 ### Step 4: Update Roadmap
 Update `_blueprint/execution/roadmap.md` to reflect the new hierarchy (Goal -> Sub-Goal -> Features).
 
-### Step 5: Report
+### Step 5: Prevent Duplication (Idempotency)
+If the Goal changes and this protocol runs again, **do NOT create duplicate artifacts**.
+- Before creating a new Sub-Goal, call `search_artifacts(type="Goal", parent_id="GL-xxx")` using the parent Goal ID.
+- Before creating a new Feature, call `search_artifacts(type="Feature", parent_id="GL-yyy")` using the Sub-Goal ID.
+- If the semantic equivalent already exists, use `update_status` to move it back to `REVIEW` and modify its content instead of creating a new one.
+
+### Step 6: Report
 Call `update_status(id, "REVIEW")` on all newly created Sub-Goals and Features.
 Output: **"Decomposed Goal {GL-id} into {N} Sub-Goals and {M} Features. Ready for review."**

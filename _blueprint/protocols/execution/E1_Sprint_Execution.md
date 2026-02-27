@@ -10,7 +10,8 @@ Run E1 when a Sprint is active and there are Tasks ready to be worked on.
 
 ### Step 1: Claim Task
 1. Read `_blueprint/execution/sprint_current.md` and select a task.
-2. Read the full `TSK-xxx` artifact.
+2. Call `get_traceability_tree(artifact_id="TSK-xxx")` to understand the business context immediately.
+3. Read the full `TSK-xxx` artifact.
 
 ### Step 1.5: Draft Implementation Plan
 Before writing code, analyze the task and update the exact file of the `TSK-xxx` artifact:
@@ -33,15 +34,23 @@ As you execute, if you discover new architectural patterns, API caveats, or doma
 Call the `mcp_blueprint_harvest_knowledge` tool.
 Provide a clear `topic` and `description` (with an optional `code_snippet`). This safely appends the information to `new_learnings.md` without risking file corruption.
 
+### Step 4.5: Technical Debt Tracking
+If you take a shortcut, hardcode a value, or discover code that needs refactoring later:
+1. Do NOT ignore it.
+2. Call `create_artifact(type="Task")` to generate a new `TSK-xxx` artifact.
+3. Set `title` with a `[Tech Debt]` prefix.
+4. Set its `parent_uc` to the same Use Case ID as your current task (maintaining traceability).
+5. Describe the shortcut taken and what needs to be fixed.
+
 ### Step 5: Complete Task
 Call the `mcp_blueprint_complete_task` tool with your `task_id`.
 The server will automatically update the Task artifact's status to `DONE` and check it off in `sprint_current.md`.
 
 ### Step 6: Knowledge Consolidation (Brain Update)
 At the end of the task, review your learnings:
-1. Did you find a reusable solution? Append it to `_blueprint/dev_docs/brain/Design_Patterns.md`.
-2. Did you hit a major roadblock or antipattern? Document it in `_blueprint/dev_docs/brain/Anti_Patterns.md`.
-3. Did you define a new core domain concept? Add it to `_blueprint/dev_docs/brain/Terminology.md`.
+1. Did you find a reusable solution? Call `update_brain_doc(doc_name="Design_Patterns.md", topic="...", text="...")`.
+2. Did you hit a major roadblock or antipattern? Call `update_brain_doc(doc_name="Anti_Patterns.md", topic="...", text="...")`.
+3. Did you define a new core domain concept? Call `update_brain_doc(doc_name="Terminology.md", topic="...", text="...")`.
 *Note: This replaces the old batch "Phase 7" by doing continuous knowledge harvesting.*
 
 ### Step 7: Report
