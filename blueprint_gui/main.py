@@ -113,92 +113,124 @@ def _color_for_status(status: str) -> QColor:
 
 
 # ---------------------------------------------------------------------------
-# Panel 1: Entity Tables
+# Panel 1: Artifact Workbench (tree + viewer + critique in one pane)
 # ---------------------------------------------------------------------------
 
-class EntityTablesPanel(QWidget):
+class ArtifactWorkbenchPanel(QWidget):
+    """Combined viewer + critique panel. Tree on left, viewer+critique on right."""
+
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._layout = QVBoxLayout(self)
-        self._tab_widget = QTabWidget()
-        self._layout.addWidget(self._tab_widget)
-        self._tables: dict[str, QTableWidget] = {}
-        self.artifact_selected = None  # callback(path, meta)
-        self._build_tabs()
+        root_layout = QHBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
 
-    def _build_tabs(self) -> None:
-        for entity_name in ENTITY_CONFIG:
-            table = QTableWidget()
-            table.setAlternatingRowColors(True)
-            table.setSelectionBehavior(QTableWidget.SelectRows)
-            table.horizontalHeader().setStretchLastSection(True)
-            table.setSortingEnabled(True)
-            table.cellClicked.connect(lambda row, col, t=table, n=entity_name: self._on_row_click(t, n, row))
-            self._tables[entity_name] = table
-            self._tab_widget.addTab(table, entity_name)
+        main_splitter = QSplitter(Qt.Horizontal)
 
-    def refresh(self) -> None:
-        for entity_name, table in self._tables.items():
-            cfg = ENTITY_CONFIG[entity_name]
-            columns = cfg["columns"]
-            artifacts = _scan_artifacts(entity_name)
-            table.setColumnCount(len(columns))
-            table.setHorizontalHeaderLabels(columns)
-            table.setRowCount(len(artifacts))
-            for row, entry in enumerate(artifacts):
-                meta = entry["meta"]
-                for col, key in enumerate(columns):
-                    val = str(meta.get(key, ""))
-                    item = QTableWidgetItem(val)
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                    if key == "status":
-                        item.setBackground(_color_for_status(val))
-                        item.setForeground(QColor("white"))
-                    item.setData(Qt.UserRole, entry)
-                    table.setItem(row, col, item)
-            table.resizeColumnsToContents()
-            # Summary row
-            table.setStatusTip(f"{entity_name}: {len(artifacts)} total")
+        # ── LEFT: artifact tree ───────────────────────────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(4, 4, 0, 4)
 
-    def _on_row_click(self, table: QTableWidget, entity_name: str, row: int) -> None:
-        item = table.item(row, 0)
-        if item and self.artifact_selected:
-            entry = item.data(Qt.UserRole)
-            if entry:
-                self.artifact_selected(entry["path"], entry["meta"])
+        search_bar = QLineEdit()
+        search_bar.setPlaceholderText("🔍 Filter artifacts…")
+        search_bar.setStyleSheet(
+            "background:#111827; color:#d0d8e8; border:1px solid #2a3a5a;"
+            " border-radius:4px; padding:3px 6px;"
+        )
+        search_bar.textChanged.connect(self._filter_tree)
+        left_layout.addWidget(search_bar)
+        self._search_bar = search_bar
 
-
-# ---------------------------------------------------------------------------
-# Panel 2: Artifact Viewer
-# ---------------------------------------------------------------------------
-
-class ArtifactViewerPanel(QWidget):
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        splitter = QSplitter(Qt.Horizontal)
-
-        # Left: artifact tree
         self._tree = QTreeWidget()
         self._tree.setHeaderLabel("Artifacts")
-        self._tree.itemClicked.connect(self._on_tree_item_click)
-        splitter.addWidget(self._tree)
+        self._tree.itemClicked.connect(self._on_tree_click)
+        left_layout.addWidget(self._tree)
+        main_splitter.addWidget(left)
 
-        # Right: content + trace path
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        self._trace_label = QLabel("Trace path: —")
+        # ── RIGHT: viewer (top) + critique (bottom) ───────────────────────────
+        right_splitter = QSplitter(Qt.Vertical)
+
+        # ── Viewer section ─────────────────────────────────────────────────
+        viewer_widget = QWidget()
+        viewer_layout = QVBoxLayout(viewer_widget)
+        viewer_layout.setContentsMargins(4, 4, 4, 0)
+
+        self._trace_label = QLabel("Trace: —")
         self._trace_label.setWordWrap(True)
-        self._trace_label.setStyleSheet("color: #8ab; font-style: italic;")
-        right_layout.addWidget(self._trace_label)
+        self._trace_label.setStyleSheet("color:#8ab; font-style:italic; padding:2px 4px;")
+        viewer_layout.addWidget(self._trace_label)
+
         self._content_browser = QTextBrowser()
         self._content_browser.setOpenLinks(False)
-        right_layout.addWidget(self._content_browser)
-        splitter.addWidget(right)
-        splitter.setSizes([250, 600])
+        viewer_layout.addWidget(self._content_browser)
+        right_splitter.addWidget(viewer_widget)
 
-        layout.addWidget(splitter)
+        # ── Critique section ───────────────────────────────────────────────
+        critique_widget = QWidget()
+        critique_layout = QVBoxLayout(critique_widget)
+        critique_layout.setContentsMargins(4, 0, 4, 4)
+
+        # Info bar
+        self._artifact_label = QLabel("Select an artifact from the tree")
+        self._artifact_label.setStyleSheet(
+            "font-weight:bold; color:#8ab; padding:4px;"
+            " background:#16213e; border-radius:4px;"
+        )
+        critique_layout.addWidget(self._artifact_label)
+
+        # Feedback + history side by side
+        feedback_splitter = QSplitter(Qt.Horizontal)
+
+        # Feedback input
+        fb_widget = QWidget()
+        fb_layout = QVBoxLayout(fb_widget)
+        fb_layout.setContentsMargins(0, 0, 0, 0)
+        fb_layout.addWidget(QLabel("Feedback:"))
+        self._feedback_input = QPlainTextEdit()
+        self._feedback_input.setPlaceholderText("Write your critique or approval notes here…")
+        self._feedback_input.setMaximumHeight(90)
+        fb_layout.addWidget(self._feedback_input)
+
+        btn_row = QHBoxLayout()
+        self._approve_btn = QPushButton("✅ APPROVE")
+        self._change_btn  = QPushButton("🔁 REQUEST CHANGE")
+        self._reject_btn  = QPushButton("❌ REJECT")
+        self._approve_btn.clicked.connect(lambda: self._submit("APPROVED"))
+        self._change_btn .clicked.connect(lambda: self._submit("NEEDS_FIX"))
+        self._reject_btn .clicked.connect(lambda: self._submit("NEEDS_FIX"))
+        for btn in (self._approve_btn, self._change_btn, self._reject_btn):
+            btn.setStyleSheet(
+                "QPushButton { background:#16213e; border:1px solid #2a3a5a;"
+                " color:#8ab; border-radius:4px; padding:4px 10px; }"
+                "QPushButton:hover { background:#1a2a4a; color:#d0e8ff; }"
+            )
+            btn_row.addWidget(btn)
+        fb_layout.addLayout(btn_row)
+        feedback_splitter.addWidget(fb_widget)
+
+        # History
+        hist_widget = QWidget()
+        hist_layout = QVBoxLayout(hist_widget)
+        hist_layout.setContentsMargins(0, 0, 0, 0)
+        hist_layout.addWidget(QLabel("Feedback History:"))
+        self._history_browser = QTextBrowser()
+        hist_layout.addWidget(self._history_browser)
+        feedback_splitter.addWidget(hist_widget)
+        feedback_splitter.setSizes([500, 400])
+
+        critique_layout.addWidget(feedback_splitter)
+        right_splitter.addWidget(critique_widget)
+        right_splitter.setSizes([480, 220])
+
+        main_splitter.addWidget(right_splitter)
+        main_splitter.setSizes([260, 900])
+        root_layout.addWidget(main_splitter)
+
         self._index: dict[str, dict] = {}
+        self._current_path: Path | None = None
+        self._current_meta: dict = {}
+
+    # ── Refresh / build tree ─────────────────────────────────────────────────
 
     def refresh(self) -> None:
         self._index = {}
@@ -206,114 +238,103 @@ class ArtifactViewerPanel(QWidget):
         for entity_name, cfg in ENTITY_CONFIG.items():
             root_item = QTreeWidgetItem([entity_name])
             root_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+            root_item.setForeground(0, QColor("#8ab"))
+            root_item.setFlags(root_item.flags() & ~Qt.ItemIsSelectable)
             for entry in _scan_artifacts(entity_name):
-                meta = entry["meta"]
-                aid = str(meta.get("id", "?"))
-                title = str(meta.get("title", meta.get("hypothesis", aid)))
+                meta   = entry["meta"]
+                aid    = str(meta.get("id", "?"))
+                title  = str(meta.get("title", meta.get("hypothesis", aid)))
                 status = str(meta.get("status", ""))
-                child = QTreeWidgetItem([f"{aid}  [{status}]  {title[:50]}"])
+                child  = QTreeWidgetItem([f"{aid}  [{status}]  {title[:45]}"])
                 child.setForeground(0, _color_for_status(status))
                 child.setData(0, Qt.UserRole, entry)
                 root_item.addChild(child)
                 self._index[aid] = entry
             self._tree.addTopLevelItem(root_item)
+        self._tree.expandAll()
 
-    def load_artifact(self, path: Path, meta: dict) -> None:
+    # ── Tree interaction ─────────────────────────────────────────────────────
+
+    def _on_tree_click(self, item: QTreeWidgetItem, _col: int) -> None:
+        entry = item.data(0, Qt.UserRole)
+        if entry:
+            self._load(entry["path"], entry["meta"])
+
+    def _filter_tree(self, text: str) -> None:
+        search = text.lower().strip()
+        for i in range(self._tree.topLevelItemCount()):
+            group = self._tree.topLevelItem(i)
+            any_visible = False
+            for j in range(group.childCount()):
+                child = group.child(j)
+                match = not search or search in child.text(0).lower()
+                child.setHidden(not match)
+                if match:
+                    any_visible = True
+            group.setHidden(not any_visible and bool(search))
+
+    # ── Load artifact ─────────────────────────────────────────────────────────
+
+    def _load(self, path: Path, meta: dict) -> None:
+        self._current_path = path
+        self._current_meta = meta
+
+        # Viewer
         body = read_body(path)
         html = md_lib.markdown(body, extensions=["fenced_code", "tables"])
-        meta_html = "<br>".join(f"<b>{k}:</b> {v}" for k, v in meta.items())
-        self._content_browser.setHtml(
-            f"<div style='background:#1e2a1e;padding:8px;border-radius:4px;font-size:11px'>{meta_html}</div>"
-            f"<hr>{html}"
+        meta_html = "  ".join(
+            f"<span style='color:#8ab'>{k}:</span> <b>{v}</b>"
+            for k, v in meta.items()
         )
-        self._build_trace_path(meta)
+        self._content_browser.setHtml(
+            f"<div style='background:#16213e;padding:6px 10px;border-radius:4px;"
+            f"font-size:11px;margin-bottom:6px'>{meta_html}</div>"
+            f"{html}"
+        )
 
-    def _build_trace_path(self, meta: dict) -> None:
-        chain = []
-        current_meta = meta
+        # Trace path
+        chain: list[str] = []
+        cur = meta
         visited: set[str] = set()
         while True:
-            aid = str(current_meta.get("id", ""))
+            aid = str(cur.get("id", ""))
             if aid in visited:
                 break
             visited.add(aid)
             chain.append(aid)
             parent = None
             for key in ("parent_uc", "parent_feat", "parent_goal", "origin"):
-                val = current_meta.get(key)
+                val = cur.get(key)
                 if val:
                     parent = str(val)
                     break
             if not parent or parent not in self._index:
                 break
-            current_meta = self._index[parent]["meta"]
+            cur = self._index[parent]["meta"]
         self._trace_label.setText("Trace: " + " → ".join(reversed(chain)))
 
-    def _on_tree_item_click(self, item: QTreeWidgetItem, col: int) -> None:
-        entry = item.data(0, Qt.UserRole)
-        if entry:
-            self.load_artifact(entry["path"], entry["meta"])
-
-
-# ---------------------------------------------------------------------------
-# Panel 3: Critique
-# ---------------------------------------------------------------------------
-
-class CritiquePanel(QWidget):
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-
-        self._artifact_label = QLabel("No artifact selected. Click a row in Entity Tables.")
-        self._artifact_label.setStyleSheet("font-weight:bold; color:#8ab;")
-        layout.addWidget(self._artifact_label)
-
-        self._feedback_input = QPlainTextEdit()
-        self._feedback_input.setPlaceholderText("Write your feedback or critique here…")
-        layout.addWidget(self._feedback_input)
-
-        btn_row = QHBoxLayout()
-        self._approve_btn = QPushButton("✅ APPROVE")
-        self._change_btn  = QPushButton("🔁 REQUEST CHANGE")
-        self._reject_btn  = QPushButton("❌ REJECT")
-        self._approve_btn.clicked.connect(lambda: self._submit("APPROVED"))
-        self._change_btn.clicked.connect(lambda: self._submit("NEEDS_FIX"))
-        self._reject_btn.clicked.connect(lambda: self._submit("REJECTED"))
-        for btn in (self._approve_btn, self._change_btn, self._reject_btn):
-            btn_row.addWidget(btn)
-        layout.addLayout(btn_row)
-
-        history_group = QGroupBox("Feedback History")
-        history_layout = QVBoxLayout(history_group)
-        self._history_browser = QTextBrowser()
-        history_layout.addWidget(self._history_browser)
-        layout.addWidget(history_group)
-
-        self._current_path: Path | None = None
-        self._current_meta: dict = {}
-
-    def load_artifact(self, path: Path, meta: dict) -> None:
-        self._current_path = path
-        self._current_meta = meta
+        # Critique
         aid = str(meta.get("id", path.stem))
-        self._artifact_label.setText(f"Artifact: {aid}  |  Status: {meta.get('status', '?')}")
+        status = str(meta.get("status", "?"))
+        self._artifact_label.setText(f"  {aid}  │  Status: {status}")
         self._feedback_input.clear()
         self._load_history(aid)
 
+    # ── Critique actions ─────────────────────────────────────────────────────
+
     def _submit(self, action: str) -> None:
         if not self._current_path:
-            QMessageBox.warning(self, "No artifact", "Select an artifact first.")
+            QMessageBox.warning(self, "No artifact", "Select an artifact from the tree first.")
             return
         comment = self._feedback_input.toPlainText().strip()
-        aid = str(self._current_meta.get("id", self._current_path.stem))
+        aid     = str(self._current_meta.get("id", self._current_path.stem))
         fb_path = BLUEPRINT_ROOT / "inbound" / "User_Feedback" / f"FB-{aid}.md"
-        ts = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        ts      = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%S")
         fb_path.parent.mkdir(parents=True, exist_ok=True)
         with fb_path.open("a", encoding="utf-8") as f:
             f.write(f"\n---\ntimestamp: {ts}Z\naction: {action}\n---\n\n{comment}\n")
-        # Patch artifact status
-        patch_frontmatter(self._current_path, {"status": action if action != "REJECTED" else "NEEDS_FIX"})
-        QMessageBox.information(self, "Submitted", f"Feedback saved. Status → {action}")
+        patch_frontmatter(self._current_path, {"status": action})
+        self._artifact_label.setText(f"  {aid}  │  Status: {action}")
         self._feedback_input.clear()
         self._load_history(aid)
 
@@ -323,6 +344,10 @@ class CritiquePanel(QWidget):
             self._history_browser.setPlainText(fb_path.read_text(encoding="utf-8"))
         else:
             self._history_browser.setPlainText("No feedback history yet.")
+
+    def load_artifact(self, path: Path, meta: dict) -> None:
+        """External call to load a specific artifact."""
+        self._load(path, meta)
 
 
 # ---------------------------------------------------------------------------
@@ -838,28 +863,19 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._tabs)
 
         # Instantiate panels
-        self._entity_tables = EntityTablesPanel()
-        self._artifact_viewer = ArtifactViewerPanel()
-        self._critique = CritiquePanel()
+        self._workbench = ArtifactWorkbenchPanel()
         self._plantuml = PlantUMLPanel()
         self._inbound_editor = InboundEditorPanel()
         self._roadmap = RoadmapPanel()
         self._prompts = PromptsPanel()
 
-        self._tabs.addTab(self._entity_tables,   "📋 Entities")
-        self._tabs.addTab(self._artifact_viewer, "🔍 Viewer")
-        self._tabs.addTab(self._critique,        "📝 Critique")
+        self._tabs.addTab(self._workbench,       "� Workbench")
         self._tabs.addTab(self._plantuml,        "🗺 UML")
         self._tabs.addTab(self._inbound_editor,  "📥 Inbound")
         self._tabs.addTab(self._roadmap,         "🛣 Roadmap")
         self._tabs.addTab(self._prompts,         "🚀 Prompts")
 
-        # Wire: clicking a row in Entities opens it in Viewer and Critique
-        def _on_artifact_selected(path: Path, meta: dict) -> None:
-            self._artifact_viewer.load_artifact(path, meta)
-            self._critique.load_artifact(path, meta)
-
-        self._entity_tables.artifact_selected = _on_artifact_selected
+        # No cross-panel wiring needed — workbench is self-contained
 
         # File system watcher — auto-refresh on any change in _blueprint/
         self._watcher = QFileSystemWatcher()
@@ -880,8 +896,7 @@ class MainWindow(QMainWindow):
         self._refresh_timer.start(300)
 
     def _refresh_all(self) -> None:
-        self._entity_tables.refresh()
-        self._artifact_viewer.refresh()
+        self._workbench.refresh()
         self._roadmap.refresh()
         self._inbound_editor.refresh()
         self._plantuml.refresh()
