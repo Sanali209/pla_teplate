@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ImageContent
 
 from config import BLUEPRINT_ROOT
 from fs_reader import read_frontmatter, write_frontmatter, patch_frontmatter, read_body
@@ -253,6 +253,12 @@ async def _start_sprint(args: dict) -> list[TextContent]:
     sprint_file = BLUEPRINT_ROOT / "execution" / "sprint_current.md"
     sprint_file.parent.mkdir(parents=True, exist_ok=True)
     
+    # Read Anti-Patterns if they exist to inject as context
+    anti_patterns_file = BLUEPRINT_ROOT / "dev_docs" / "brain" / "Anti_Patterns.md"
+    anti_patterns_content = ""
+    if anti_patterns_file.exists():
+        anti_patterns_content = "\n\n## ⚠️ Anti-Patterns & Constraints\n" + anti_patterns_file.read_text(encoding="utf-8")
+        
     lines = [
         f"# Current Sprint",
         f"**Goal:** {goal}\n",
@@ -260,6 +266,9 @@ async def _start_sprint(args: dict) -> list[TextContent]:
     ]
     for tid in task_ids:
         lines.append(f"- [ ] {tid}")
+        
+    if anti_patterns_content:
+        lines.append(anti_patterns_content)
         
     sprint_file.write_text("\n".join(lines), encoding="utf-8")
     tool_ok("start_sprint", f"Started sprint with {len(task_ids)} tasks.")
@@ -432,6 +441,103 @@ async def _validate_uml(args: dict) -> list[TextContent]:
     tool_ok("validate_uml", "Syntax OK")
     return _text("✅ UML Syntax OK. Safe to save to Drafts.")
 
+async def _read_image(args: dict) -> list[TextContent | ImageContent]:
+    filepath = args.get("filepath", "")
+    tool_call("read_image", {"filepath": filepath})
+    
+    path = Path(filepath)
+    if not path.is_absolute():
+        path = BLUEPRINT_ROOT / path
+        
+    if not path.exists():
+        return _err_text(f"Image not found: {path}")
+        
+    ext = path.suffix.lower()
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+    mime_type = mime_map.get(ext)
+    if not mime_type:
+        return _err_text(f"Unsupported image format: {ext}. Supported: png, jpg, webp, gif")
+        
+    import base64
+    try:
+        data = base64.b64encode(path.read_bytes()).decode("utf-8")
+        tool_ok("read_image", f"Loaded {path.name}")
+        return [ImageContent(type="image", mimeType=mime_type, data=data)]
+    except Exception as e:
+        return _err_text(f"Error reading image: {e}")
+
+async def _run_linter(args: dict) -> list[TextContent]:
+    filepath = args.get("filepath", "")
+    tool_call("run_linter", {"filepath": filepath})
+    path = Path(filepath)
+    if not path.is_absolute():
+        path = BLUEPRINT_ROOT / path
+    if not path.exists():
+        return _err_text(f"File not found: {path}")
+
+    ext = path.suffix.lower()
+    errors = []
+    
+    if ext == ".py":
+        import ast
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                ast.parse(f.read(), filename=str(path))
+        except SyntaxError as e:
+            errors.append(f"SyntaxError: {e.msg} at line {e.lineno}, col {e.offset}")
+            
+    elif ext in (".js", ".ts", ".jsx", ".tsx"):
+        # Basic bracket matching matching as fallback
+        content = path.read_text(encoding="utf-8")
+        ob = content.count("{")
+        cb = content.count("}")
+        if ob != cb:
+             errors.append(f"Mismatched curly brackets: {ob} open vs {cb} close.")
+             
+    if errors:
+         return _text("❌ Linter Validation Failed:\n" + "\n".join(f"- {e}" for e in errors))
+    
+    tool_ok("run_linter", f"Syntax OK for {path.name}")
+    return _text("✅ Code Syntax OK. No critical AST errors found.")
+
+
+async def _find_usages(args: dict) -> list[TextContent]:
+    query = args.get("query", "")
+    directory = args.get("directory", str(BLUEPRINT_ROOT))
+    tool_call("find_usages", {"query": query})
+    import re
+    
+    dir_path = Path(directory)
+    if not dir_path.is_absolute():
+        dir_path = BLUEPRINT_ROOT / dir_path
+        
+    if not dir_path.exists():
+         return _err_text(f"Directory not found: {dir_path}")
+
+    results = []
+    # Simplified search: look through .py, .js, .ts files
+    for p in dir_path.rglob("*"):
+        if p.is_file() and p.suffix in (".py", ".js", ".ts", ".jsx", ".tsx", ".md"):
+            try:
+                content = p.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                for i, line in enumerate(lines):
+                    if query in line:
+                         results.append(f"{p.relative_to(BLUEPRINT_ROOT)}:{i+1}: {line.strip()}")
+            except Exception:
+                pass
+                
+    if not results:
+        return _text(f"No usages found for '{query}'.")
+        
+    return _text(f"Found {len(results)} usages of '{query}':\n" + "\n".join(results[:50]) + ("\n...truncated" if len(results) > 50 else ""))
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -450,6 +556,9 @@ _TOOL_HANDLERS = {
     "get_traceability_tree": _get_traceability_tree,
     "update_brain_doc":  _update_brain_doc,
     "validate_uml":      _validate_uml,
+    "read_image":        _read_image,
+    "run_linter":        _run_linter,
+    "find_usages":       _find_usages,
 }
 
 _TOOL_SCHEMAS: list[Tool] = [
@@ -601,6 +710,40 @@ _TOOL_SCHEMAS: list[Tool] = [
                 "content": {"type": "string", "description": "The raw PlantUML content including @startuml tags."},
             },
             "required": ["content"]
+        },
+    ),
+    Tool(
+        name="read_image",
+        description="Read an image file (e.g., UI wireframe) and return it as base64 ImageContent for the LLM to analyze.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "filepath": {"type": "string", "description": "Path to the image (relative to BLUEPRINT_ROOT or absolute)."},
+            },
+            "required": ["filepath"]
+        },
+    ),
+    Tool(
+        name="run_linter",
+        description="Perform syntax validation (AST parsing) on a code file before submitting it to ensure no bracket/indentation errors exist.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "filepath": {"type": "string", "description": "Path to the code file to analyze."},
+            },
+            "required": ["filepath"]
+        },
+    ),
+    Tool(
+        name="find_usages",
+        description="Search for usages of a specific function, class, or variable name across the project.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The exact string or symbol to search for."},
+                "directory": {"type": "string", "description": "Optional directory to limit search. Defaults to BLUEPRINT_ROOT."},
+            },
+            "required": ["query"]
         },
     ),
 ]

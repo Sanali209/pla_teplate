@@ -15,20 +15,28 @@ PROTOCOLS_DIR = BLUEPRINT_ROOT / "protocols"
 
 # Name → relative path inside protocols/
 PROMPT_MAP: dict[str, str] = {
-    "p0_ingestion":  "generation/P0_Ingestion.md",
-    "p1_inception":  "generation/P1_Inception.md",
-    "p2_research":   "generation/P2_Research.md",
-    "p3_analysis":   "generation/P3_Analysis.md",
-    "p4_dev_sync":   "generation/P4_Dev_Sync.md",
-    "meta_rules":    "meta/Metadata_Schema.md",
-    "self_critic":   "review/R1_Agent_Self_Critic.md",
-    "fix_protocol":  "review/R3_Fix_and_Refactor.md",
+    "p0_ingestion":        BLUEPRINT_ROOT / "protocols" / "generation" / "P0_Ingestion.md",
+    "p0_5_bug_triage":     BLUEPRINT_ROOT / "protocols" / "generation" / "P0_5_Bug_Triage.md",
+    "p1_inception":        BLUEPRINT_ROOT / "protocols" / "generation" / "P1_Inception.md",
+    "p1_5_goal_decomp":    BLUEPRINT_ROOT / "protocols" / "generation" / "P1_5_Goal_Decomposition.md",
+    "p2_research":         BLUEPRINT_ROOT / "protocols" / "generation" / "P2_Research.md",
+    "p2_5_ui_architecture": BLUEPRINT_ROOT / "protocols" / "generation" / "P2_5_UI_Architecture.md",
+    "p3_analysis":         BLUEPRINT_ROOT / "protocols" / "generation" / "P3_Analysis.md",
+    "p4_dev_sync":         BLUEPRINT_ROOT / "protocols" / "generation" / "P4_Dev_Sync.md",
+    "p5_sprint_planning":  BLUEPRINT_ROOT / "protocols" / "generation" / "P5_Sprint_Planning.md",
+    "e1_sprint_execution": BLUEPRINT_ROOT / "protocols" / "execution" / "E1_Sprint_Execution.md",
+    "meta_rules":          BLUEPRINT_ROOT / "protocols" / "meta" / "Metadata_Schema.md",
+    "self_critic":         BLUEPRINT_ROOT / "protocols" / "review" / "R1_Agent_Self_Critic.md",
+    "fix_protocol":        BLUEPRINT_ROOT / "protocols" / "review" / "R3_Fix_and_Refactor.md",
 }
 
 DESCRIPTIONS: dict[str, str] = {
     "p0_ingestion": "Convert raw inbound material into structured blueprint artifacts",
+    "p0_5_bug_triage": "Triage a bug report into a structured artifact",
     "p1_inception": "Transform a project idea into strategic Goals and Roadmap",
+    "p1_5_goal_decomp": "Decompose a high-level goal into actionable sub-goals",
     "p2_research":  "Plan and conduct R&D spikes to eliminate uncertainty",
+    "p2_5_ui_architecture": "Design the UI architecture for a feature",
     "p3_analysis":  "Decompose a Feature into Use Cases and User Flows",
     "p4_dev_sync":  "Generate atomic Tasks and Fuzzing specs from approved Use Cases",
     "meta_rules":   "Metadata schema and file naming rules for all artifacts",

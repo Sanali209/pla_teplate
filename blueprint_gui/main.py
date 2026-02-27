@@ -73,20 +73,29 @@ ENTITY_CONFIG: dict[str, dict[str, Any]] = {
         "dir": BLUEPRINT_ROOT / "execution" / "backlog",
         "columns": ["id", "title", "status", "assignee", "parent_uc"],
     },
+    "Screens": {
+        "prefix": "SCR-",
+        "dir": BLUEPRINT_ROOT / "dev_docs" / "architecture" / "UI_UX",
+        "columns": ["id", "title", "status", "parent_feat"],
+    },
 }
 
 INBOUND_DIRS: dict[str, Path] = {
     "Briefings":      BLUEPRINT_ROOT / "inbound" / "Briefings",
     "MindMaps":       BLUEPRINT_ROOT / "inbound" / "MindMaps",
+    "Wireframes":     BLUEPRINT_ROOT / "inbound" / "Wireframes",
+    "Issues_and_Bugs":BLUEPRINT_ROOT / "inbound" / "Issues_and_Bugs",
     "Knowledge_Raw":  BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw",
     "User_Feedback":  BLUEPRINT_ROOT / "inbound" / "User_Feedback",
 }
 
 INBOUND_PROTOCOL_HINT: dict[str, str] = {
-    "Briefings":     "Protocol: P0_Ingestion — converts briefs into Goals/Features",
-    "MindMaps":      "Protocol: P0_Ingestion — parses mind-map structure",
-    "Knowledge_Raw": "Protocol: P0_Ingestion or H2_Wiki_Update — feeds Knowledge Base",
-    "User_Feedback": "Protocol: R2_User_Critique → R3_Fix — triggers agent fix cycle",
+    "Briefings":      "Protocol: P0_Ingestion — converts briefs into Goals/Features",
+    "MindMaps":       "Protocol: P0_Ingestion — parses mind-map structure",
+    "Wireframes":     "Protocol: P2.5_UI_Architecture — extracts Screens (SCR-xxx)",
+    "Issues_and_Bugs":"Protocol: P0.5_Bug_Triage — resolves bugs to Tasks or Use Cases",
+    "Knowledge_Raw":  "Protocol: P0_Ingestion or H2_Wiki_Update — feeds Knowledge Base",
+    "User_Feedback":  "Protocol: R2_User_Critique → R3_Fix — triggers agent fix cycle",
 }
 
 
@@ -629,6 +638,12 @@ class InboundEditorPanel(QWidget):
         self._protocol_hint = QLabel("")
         self._protocol_hint.setStyleSheet("color: #8ab; font-style: italic; padding: 4px;")
         right_layout.addWidget(self._protocol_hint)
+        
+        self._img_label = QLabel()
+        self._img_label.setAlignment(Qt.AlignCenter)
+        self._img_label.hide()
+        right_layout.addWidget(self._img_label)
+        
         self._editor = QPlainTextEdit()
         self._editor.setFont(QFont("Consolas", 10))
         right_layout.addWidget(self._editor)
@@ -659,10 +674,23 @@ class InboundEditorPanel(QWidget):
     def _load_file(self, list_item: QListWidgetItem) -> None:
         path: Path = list_item.data(Qt.UserRole)
         self._current_file = path
-        try:
-            self._editor.setPlainText(path.read_text(encoding="utf-8"))
-        except OSError as e:
-            self._editor.setPlainText(f"Error reading file: {e}")
+        
+        ext = path.suffix.lower()
+        if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"):
+            pix = QPixmap(str(path))
+            pix = pix.scaled(800, 800, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self._img_label.setPixmap(pix)
+            self._img_label.show()
+            self._editor.hide()
+            self._save_btn.hide()
+        else:
+            self._img_label.hide()
+            self._editor.show()
+            self._save_btn.show()
+            try:
+                self._editor.setPlainText(path.read_text(encoding="utf-8"))
+            except OSError as e:
+                self._editor.setPlainText(f"Error reading file: {e}")
 
     def _save_file(self) -> None:
         if not self._current_file:
@@ -698,6 +726,9 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("📥", "P0",  "P0 · Ingestion",
      "Parse raw inbound material into structured Goals/Features extract",
      "protocols/generation/P0_Ingestion.md"),
+    ("🐛", "P0.5","P0.5 · Bug Triage",
+     "Triage an issue or bug report into a structured artifact or use case update",
+     "protocols/generation/P0_5_Bug_Triage.md"),
     ("🎯", "P1",  "P1 · Inception",
      "Transform project idea → Goals + Feature Map + Roadmap",
      "protocols/generation/P1_Inception.md"),
@@ -707,6 +738,9 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("🔬", "P2",  "P2 · Research",
      "Run R&D spikes to eliminate uncertainty in features",
      "protocols/generation/P2_Research.md"),
+    ("🎨", "P2.5","P2.5 · UI Architecture",
+     "Extract and design UI Screen artifacts from visual wireframes",
+     "protocols/generation/P2_5_UI_Architecture.md"),
     ("📐", "P3",  "P3 · Analysis",
      "Decompose approved features → Use Cases + User Flows",
      "protocols/generation/P3_Analysis.md"),
@@ -725,6 +759,9 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("🪞", "R1",  "R1 · Self-Critique",
      "Auto-review an artifact for logic gaps before human review",
      "protocols/review/R1_Agent_Self_Critic.md"),
+    ("🧐", "R1.5","R1.5 · Code Review",
+     "Auto-review source code for syntax, security, and context loss before commit",
+     "protocols/review/R1_5_Code_Review.md"),
     ("📬", "R2",  "R2 · User Critique",
      "Process human feedback file → structured change requests",
      "protocols/review/R2_User_Critique_Process.md"),

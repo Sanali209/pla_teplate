@@ -18,16 +18,20 @@ The Blueprint is divided into strict chronological and functional folders. Do no
 - **`Briefings/`**: Meeting notes, chat logs, user briefs.
 - **`Knowledge_Raw/`**: API documentation, tutorials, external references.
 - **`MindMaps/`**: Visual diagrams, Miro exports.
+- **`Wireframes/`**: Screenshots and design mockups (.png, .jpg).
 - **`User_Feedback/`**: Critiques and corrections provided by human user.
 - **`Issues_and_Bugs/`**: Bug reports, QA tickets, or Sentry logs.
-- *Agent Action:* Run `P0_Ingestion` for Briefings/MindMaps, or `P0_5_Bug_Triage` for Issues_and_Bugs.
+- *Agent Action:* Run `P0_Ingestion`, `P0_5_Bug_Triage`, or `P2_5_UI_Architecture` depending on the inbound type.
 
 ### 2. `dev_docs/` (The Architects' Room)
 - What it is: Where abstract concepts turn into technical reality.
-- **`brain/`**: The permanent memory. Contains Goals (`GL-xxx`), `Terminology.md` (Glossary), `Design_Patterns.md`, and `Anti_Patterns.md`.
+- **`brain/`**: The permanent memory. Contains Goals (`GL-xxx`), `Terminology.md`, `Design_Patterns.md`, and `Anti_Patterns.md`.
 - **`logic/`**: The behavioral design. Contains Features (`FT-xxx`) and Use Cases (`UC-xxx`).
-- **`architecture/`**: Visual and structural design. Contains `UML_Models/` (PlantUML) and `Data_Schemas/` (API/DB structures).
-- **`quality/`**: The validation layer. Contains `Review_Logs/` (Agent Self-Critique results).
+- **`architecture/`**: Visual and structural design.
+  - `UI_UX/` (Screens `SCR-xxx` derived from wireframes)
+  - `UML_Models/` (PlantUML Drafts/ and Approved/)
+  - `Data_Schemas/` (API/DB structures)
+- **`quality/`**: The validation layer. Contains `Review_Logs/`.
 
 ### 3. `execution/` (The Factory Floor)
 - What it is: Where architectural designs become actionable chunks.

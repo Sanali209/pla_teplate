@@ -57,9 +57,9 @@ Every artifact contains YAML metadata linking it to its parent, enabling full **
 │   ├── dev_docs/
 │   │   ├── brain/              ← Design_Patterns.md, Anti_Patterns.md, Terminology.md
 │   │   ├── logic/              ← Features (FT-xxx) and Use Cases (UC-xxx)
-│   │   ├── architecture/       ← UML models (Drafts/ and Approved/)
+│   │   ├── architecture/       ← UI_UX/ (SCR-xxx), UML models, Data_Schemas/
 │   │   └── quality/Review_Logs/
-│   ├── inbound/                ← Raw input: Briefings, MindMaps, Knowledge_Raw, User_Feedback, Issues_and_Bugs
+│   ├── inbound/                ← Raw input: Briefings, MindMaps, Wireframes, Knowledge_Raw, Feedback, Bugs
 │   └── execution/              ← roadmap.md, backlog/ (TSK-xxx), sessions/
 
 📁 _blueprint_server/           ← MCP Server (agent interface)

@@ -19,11 +19,12 @@ Create 1–6 `TSK-xxx` artifacts using `create_artifact`. Each task must referen
 
 **Strict Decomposition Order:**
 1. **DevOps & Repo Setup (Sprint 0):** If processing UC-000 (Technical Foundation), generate technical tasks: `Setup .gitignore`, `Configure Linters (e.g. Ruff/ESLint)`, `Initialize CI/CD Pipeline (e.g. GitHub Actions)`.
-2. **Infrastructure & Data (First):** If a new table/schema is needed, create a "Database Migration" task. Provide the exact Schema/Data Contract.
-3. **Backend API:** Create one task per API endpoint or worker. Include the expected JSON Payload/Contract.
-4. **Frontend UI:** Create tasks for UI components that consume the backend APIs.
-5. **QA & Fuzzing:** Create a QA automation task based on Failure Points (see Step 3).
-6. **End-User Documentation:** Create a documentation task to explain this new feature to the final user (see Step 4).
+2. **Test-Driven Development (TDD) Foundation:** Before writing any business logic, create one dedicated `[Test]` Task for every upcoming API/Backend/Frontend feature. These tests MUST map to the Use Case Acceptance Criteria.
+3. **Infrastructure & Data:** If a new table/schema is needed, create a "Database Migration" task. Provide the exact Schema/Data Contract.
+4. **Backend API:** Create one task per API endpoint or worker. Include the expected JSON Payload/Contract.
+5. **Frontend UI:** Create tasks for UI components that consume the backend APIs.
+6. **QA & Fuzzing:** Create a QA automation task based on Failure Points (see Step 3).
+7. **End-User Documentation:** Create a documentation task to explain this new feature to the final user (see Step 4).
 
 **Incremental Updates (Re-runs):**
 If P4 is run again because the Use Case changed:

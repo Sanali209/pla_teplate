@@ -19,11 +19,14 @@ Before writing code, analyze the task and update the exact file of the `TSK-xxx`
 2. Write a detailed, bulleted checklist of the technical steps you will take to build this feature.
 3. This serves as your internal "Sub-Task" plan.
 
-### Step 2: Execution & Testing
-1. Implement the requested code changes block by block based on your Draft Implementation Plan.
-2. As you complete steps, mark them with `[x]` in the task's `## Implementation Steps` section.
-3. Add necessary unit or integration tests (using fuzzing vectors defined in P4 if applicable).
-4. Validate your code by running the project locally.
+### Step 2: Execution & Testing (Zero Trust TDD)
+1. **TDD First:** You must NEVER write business logic before a failing test exists. If a test doesn't exist, write it now based on the Acceptance Criteria. Run the test and verify it FAILS.
+2. Implement the requested code changes block by block based on your Draft Implementation Plan (keep `Anti_Patterns.md` context in mind to avoid repeating mistakes).
+3. As you complete steps, mark them with `[x]` in the task's `## Implementation Steps` section.
+4. Validate your code by running the project locally. Verify that the previous failing tests now PASS.
+
+### Step 2.5: Syntax Validation
+Before moving to Session Logs, you MUST call `mcp_blueprint_run_linter(filepath="...")` on all `.py`, `.js`, `.ts` files you modified to ensure no missing brackets or indentation errors break the build.
 
 ### Step 3: Session Logs
 Call the `mcp_blueprint_log_session` tool.
