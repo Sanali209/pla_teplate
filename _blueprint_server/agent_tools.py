@@ -539,6 +539,105 @@ async def _find_usages(args: dict) -> list[TextContent]:
     return _text(f"Found {len(results)} usages of '{query}':\n" + "\n".join(results[:50]) + ("\n...truncated" if len(results) > 50 else ""))
 
 # ---------------------------------------------------------------------------
+# RAG AND SKILLS INTEGRATION
+# ---------------------------------------------------------------------------
+def _get_vector_collection():
+    import chromadb
+    from chromadb.utils import embedding_functions
+    db_path = BLUEPRINT_ROOT / ".vectordb"
+    client = chromadb.PersistentClient(path=str(db_path))
+    # Using the default lightweight sentence-transformers model automatically handles local embeddings
+    ef = embedding_functions.DefaultEmbeddingFunction()
+    collection = client.get_or_create_collection(name="blueprint_knowledge", embedding_function=ef)
+    return collection
+
+async def _index_knowledge(args: dict) -> list[TextContent]:
+    tool_call("index_knowledge", {})
+    try:
+        collection = _get_vector_collection()
+    except Exception as e:
+         return _err_text(f"Failed to initialize ChromaDB: {e}")
+         
+    # Directories to index
+    targets = [
+        (BLUEPRINT_ROOT / "skills", "skill"),
+        (BLUEPRINT_ROOT / "dev_docs" / "brain", "brain"),
+        (BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw", "raw"),
+        (BLUEPRINT_ROOT / "execution" / "session_logs", "log"),
+    ]
+    
+    docs, ids, metadatas = [], [], []
+    
+    for dir_path, src_type in targets:
+        if not dir_path.exists():
+            continue
+        for p in dir_path.rglob("*.md"):
+            if not p.is_file() or p.name in ("sprint_current.md", "task.md"):
+                continue
+            try:
+                rel_path = str(p.relative_to(BLUEPRINT_ROOT)).replace("\\", "/")
+                content = p.read_text(encoding="utf-8")
+                # Simple chunking by headers
+                chunks = [chunk.strip() for chunk in content.split("\n## ") if chunk.strip()]
+                for i, chunk in enumerate(chunks):
+                    prefix = "## " if i > 0 else ""
+                    docs.append(prefix + chunk)
+                    doc_id = f"{rel_path}_{i}"
+                    ids.append(doc_id)
+                    metadatas.append({"source": rel_path, "type": src_type})
+            except Exception:
+                pass
+                
+    if not docs:
+         return _text("No documents found to index.")
+         
+    try:
+        # Upsert allows overwriting existing IDs
+        collection.upsert(
+            documents=docs,
+            metadatas=metadatas,
+            ids=ids
+        )
+        msg = f"✅ Successfully indexed {len(docs)} knowledge chunks into ChromaDB."
+        tool_ok("index_knowledge", msg)
+        return _text(msg)
+    except Exception as e:
+         return _err_text(f"Failed to index documents: {e}")
+
+async def _search_rag(args: dict) -> list[TextContent]:
+    query = args.get("query", "")
+    filter_type = args.get("filter_type", "")
+    top_k = args.get("top_k", 3)
+    
+    tool_call("search_rag", {"query": query, "filter_type": filter_type})
+    try:
+        collection = _get_vector_collection()
+        where_clause = {"type": filter_type} if filter_type else None
+        
+        results = collection.query(
+            query_texts=[query],
+            n_results=top_k,
+            where=where_clause
+        )
+        
+        if not results['documents'] or not results['documents'][0]:
+            return _text(f"No relevant knowledge found for query: '{query}'")
+            
+        docs = results['documents'][0]
+        metas = results['metadatas'][0]
+        
+        output = [f"### RAG Search Results for '{query}'"]
+        for i, (doc, meta) in enumerate(zip(docs, metas)):
+            output.append(f"**Source {i+1}: {meta['source']} ({meta['type']})**")
+            output.append(doc)
+            output.append("---")
+            
+        tool_ok("search_rag", f"Found {len(docs)} results.")
+        return _text("\n".join(output))
+    except Exception as e:
+         return _err_text(f"RAG search failed: {e}")
+
+# ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
 
@@ -559,6 +658,8 @@ _TOOL_HANDLERS = {
     "read_image":        _read_image,
     "run_linter":        _run_linter,
     "find_usages":       _find_usages,
+    "index_knowledge":   _index_knowledge,
+    "search_rag":        _search_rag,
 }
 
 _TOOL_SCHEMAS: list[Tool] = [
@@ -742,6 +843,27 @@ _TOOL_SCHEMAS: list[Tool] = [
             "properties": {
                 "query": {"type": "string", "description": "The exact string or symbol to search for."},
                 "directory": {"type": "string", "description": "Optional directory to limit search. Defaults to BLUEPRINT_ROOT."},
+            },
+            "required": ["query"]
+        },
+    ),
+    Tool(
+        name="index_knowledge",
+        description="Index all documents in skills/, brain/, Knowledge_Raw/, and session_logs/ into the ChromaDB vector store for RAG retrieval.",
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    Tool(
+        name="search_rag",
+        description="Perform semantic search across all indexed Agent Knowledge using natural language. Use this to find skills, solutions, or patterns.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "A natural language question or description of what you are looking for."},
+                "filter_type": {"type": "string", "description": "Optional. Filter by type: 'skill', 'brain', 'raw', or 'log'."},
+                "top_k": {"type": "number", "description": "Optional. Number of results to return (default 3)."},
             },
             "required": ["query"]
         },

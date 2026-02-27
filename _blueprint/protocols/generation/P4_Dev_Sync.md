@@ -26,6 +26,10 @@ Create 1–6 `TSK-xxx` artifacts using `create_artifact`. Each task must referen
 6. **QA & Fuzzing:** Create a QA automation task based on Failure Points (see Step 3).
 7. **End-User Documentation:** Create a documentation task to explain this new feature to the final user (see Step 4).
 
+### Step 2.5: Inject Context via RAG
+Before creating the actual `TSK-xxx` artifact via `create_artifact`, you MUST call `mcp_blueprint_search_rag(query="{Task Title}", top_k=3)`.
+If relevant skills, session logs, or anti-patterns are found, append a `## Relevant Knowledge (RAG)` section to the end of the Task's content, containing the extracted recommendations. This acts as a "cheat sheet" for the execution agent.
+
 **Incremental Updates (Re-runs):**
 If P4 is run again because the Use Case changed:
 - Call `search_artifacts(type="Task", parent_id="UC-xxx")` using this Use Case's ID.

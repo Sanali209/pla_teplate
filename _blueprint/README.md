@@ -50,6 +50,11 @@ The Blueprint is divided into strict chronological and functional folders. Do no
 - **`templates/`**: The strict Markdown YAML-frontmatter structures you MUST use when generating artifacts.
 - **`meta/`**: Rules on traceability, state machines, and naming conventions.
 
+### 5. `skills/` & `.vectordb/` (Agentic RAG)
+- What it is: The passive knowledge base for context injection.
+- **`skills/`**: Markdown files containing reusable code snippets, framework best practices, and setup guides.
+- **`.vectordb/`**: Local ChromaDB instance. The `mcp_blueprint_index_knowledge` tool vectorize files from `skills/`, `session_logs/`, `brain/`, and `Knowledge_Raw/` so they can be retrieved via semantic search during task generation.
+
 ---
 
 ## 🚦 Core Philosophy & Rules

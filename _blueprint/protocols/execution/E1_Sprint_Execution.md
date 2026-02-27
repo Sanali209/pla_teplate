@@ -45,16 +45,17 @@ If you take a shortcut, hardcode a value, or discover code that needs refactorin
 4. Set its `parent_uc` to the same Use Case ID as your current task (maintaining traceability).
 5. Describe the shortcut taken and what needs to be fixed.
 
-### Step 5: Complete Task
-Call the `mcp_blueprint_complete_task` tool with your `task_id`.
-The server will automatically update the Task artifact's status to `DONE` and check it off in `sprint_current.md`.
-
-### Step 6: Knowledge Consolidation (Brain Update)
+### Step 5: Knowledge Consolidation & Indexing
 At the end of the task, review your learnings:
 1. Did you find a reusable solution? Call `update_brain_doc(doc_name="Design_Patterns.md", topic="...", text="...")`.
 2. Did you hit a major roadblock or antipattern? Call `update_brain_doc(doc_name="Anti_Patterns.md", topic="...", text="...")`.
 3. Did you define a new core domain concept? Call `update_brain_doc(doc_name="Terminology.md", topic="...", text="...")`.
-*Note: This replaces the old batch "Phase 7" by doing continuous knowledge harvesting.*
+
+**CRITICAL RAG UPDATE:** After updating `new_learnings.md` or any `brain` docs, you MUST call `mcp_blueprint_index_knowledge()` to vectorize your new knowledge. If you skip this, future agents will not be able to find your solutions!
+
+### Step 6: Complete Task
+Call the `mcp_blueprint_complete_task` tool with your `task_id`.
+The server will automatically update the Task artifact's status to `DONE` and check it off in `sprint_current.md`.
 
 ### Step 7: Report
-Output: **"Task {TSK-id} completed. Added to session log, updated sprint board, and consolidated knowledge."**
+Output: **"Task {TSK-id} completed. Added to session log, updated sprint board, and indexed knowledge into ChromaDB."**

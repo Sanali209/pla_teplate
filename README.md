@@ -60,7 +60,9 @@ Every artifact contains YAML metadata linking it to its parent, enabling full **
 │   │   ├── architecture/       ← UI_UX/ (SCR-xxx), UML models, Data_Schemas/
 │   │   └── quality/Review_Logs/
 │   ├── inbound/                ← Raw input: Briefings, MindMaps, Wireframes, Knowledge_Raw, Feedback, Bugs
-│   └── execution/              ← roadmap.md, backlog/ (TSK-xxx), sessions/
+│   ├── execution/              ← roadmap.md, backlog/ (TSK-xxx), sessions/
+│   ├── skills/                 ← Agentic skills and reusable technical knowledge (.md)
+│   └── .vectordb/              ← ChromaDB local vector storage for RAG
 
 📁 _blueprint_server/           ← MCP Server (agent interface)
 │   ├── server.py               ← Entry point
