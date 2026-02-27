@@ -13,11 +13,12 @@ Run E1 when a Sprint is active and there are Tasks ready to be worked on.
 2. Call `get_traceability_tree(artifact_id="TSK-xxx")` to understand the business context immediately.
 3. Read the full `TSK-xxx` artifact.
 
-### Step 1.5: Draft Implementation Plan
+### Step 1.5: Draft Implementation Plan & Gather Context
 Before writing code, analyze the task and update the exact file of the `TSK-xxx` artifact:
 1. Locate the `## Implementation Steps` section.
-2. Write a detailed, bulleted checklist of the technical steps you will take to build this feature.
-3. This serves as your internal "Sub-Task" plan.
+2. Run `mcp_blueprint_search_rag(query="{technology/language} best practices AND {task_topic} patterns", filter_type="skill")` to fetch relevant technical guides (e.g. Clean Architecture, Async Patterns).
+3. Write a detailed, bulleted checklist of the technical steps you will take to build this feature, incorporating the retrieved knowledge.
+4. This serves as your internal "Sub-Task" plan.
 
 ### Step 2: Execution & Testing (Zero Trust TDD)
 1. **TDD First:** You must NEVER write business logic before a failing test exists. If a test doesn't exist, write it now based on the Acceptance Criteria. Run the test and verify it FAILS.

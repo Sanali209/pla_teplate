@@ -18,6 +18,7 @@ Carefully read the code changes made by the agent. If possible, call `mcp_bluepr
 
 ### Step 2: Check for Critical Violations
 Review against these specific criteria:
+- [ ] **Context Loading:** Call `mcp_blueprint_search_rag(query="code review checklist and anti patterns", filter_type="skill")` to load specific validation rules for the project's tech stack.
 - [ ] **Syntax:** Are there unclosed brackets, missing colons, or indentation errors?
 - [ ] **Imports:** Are all newly used classes/functions imported?
 - [ ] **Security:** Is user input concatenated directly into SQL queries or shell commands?

@@ -20,9 +20,10 @@ Use `create_artifact` with `type: Research` and `templates/Research_Tpl.md` as s
 
 ### Step 3: Conduct Research
 Attempt to answer each question using:
-- Available documentation in `_blueprint/inbound/Knowledge_Raw/`
-- Your own knowledge base
-- If insufficient — flag `verdict: PENDING` and describe what experiment would resolve it
+1. **Local Knowledge (RAG):** FIRST, call `mcp_blueprint_search_rag(query="{Research Question}")` to check if this was already solved in past session logs, skills, or existing raw knowledge.
+2. **External Knowledge:** Available documentation in `_blueprint/inbound/Knowledge_Raw/`.
+3. **General Knowledge:** Your own LLM knowledge base.
+4. **Fallback:** If insufficient — flag `verdict: PENDING` and describe what experiment would resolve it.
 
 ### Step 4: Record Verdict
 - `SUCCESS`: hypothesis confirmed, record technical justification section

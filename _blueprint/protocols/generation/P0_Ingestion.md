@@ -39,7 +39,11 @@ Read files from these directories:
    - Instead, cross-reference previous extractions (from memory or existing Goals) and **merge** the new findings.
    - Output: "Updated extraction. Added {X} new goals, modified {Y} features."
 
-7. **Ask** the user (via `S1_Wait_For_Approval`): "I extracted N goals and M features. Shall I proceed with P1_Inception to create the formal Goal artifacts?"
+7. **Index Knowledge (RAG):**
+   - **CRITICAL:** Call the `mcp_blueprint_index_knowledge` tool to vectorize any raw knowledge from `inbound/` and skills from `skills/` into ChromaDB.
+   - This ensures the extracted context is immediately available for the next phases.
+
+8. **Ask** the user (via `S1_Wait_For_Approval`): "I extracted N goals, M features, and indexed the knowledge base. Shall I proceed with P1_Inception to create the formal Goal artifacts?"
 
 ## Rules
 - NEVER invent information not present in the source material.

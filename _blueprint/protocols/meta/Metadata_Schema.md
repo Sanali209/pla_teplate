@@ -96,3 +96,10 @@ revision_count: 1
 | `BLOCKED` | Cannot proceed due to unresolved dependency |
 | `DONE` | Implementation complete |
 | `ARCHIVED` | Deprecated, kept for history |
+
+---
+
+## Agent Behavior Rules (Agentic RAG & Skills)
+
+1. **Exploring References:** If a `search_rag` query returns a snippet that contains a link to another markdown file (e.g., `[references/async-patterns.md](...)`), you **MAY** use the `view_file` tool to read the full contents of that linked file if you need more context.
+2. **Executing Scripts:** If a Skill document mentions executable scripts (e.g., `.py` scripts in a `scripts/` subfolder), you **MAY** execute them directly using the `run_command` tool (e.g., `python _blueprint/skills/senior-architect/scripts/dependency_analyzer.py --help`). Always run with `--help` first to understand the arguments.

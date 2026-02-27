@@ -23,6 +23,8 @@ Compare the bug report against the approved `UC-xxx`.
 - **Scenario A (Code Flaw):** The `UC-xxx` clearly describes the correct expected behavior, but the application does not do it. This is a developer mistake.
 - **Scenario B (Missing Requirement):** The `UC-xxx` says nothing about this edge case (e.g., promo codes were never specified). The architecture is incomplete.
 
+**Context Check:** Call `mcp_blueprint_search_rag(query="{bug_description} anti-patterns errors", filter_type="brain")` to see if this is a known codebase anti-pattern. Include this context in the output.
+
 ### Step 4: Action!
 Take the appropriate action based on the classification:
 

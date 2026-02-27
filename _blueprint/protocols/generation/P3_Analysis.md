@@ -9,11 +9,12 @@ Run P3 when a Feature has `status: APPROVED` and all research spikes are resolve
 
 ## Process
 
-### Step 1: Identify Scenarios
-For the target Feature, identify 2–5 distinct user scenarios:
-- **Happy Path** — the normal successful interaction
-- **Alternative Flows** — valid but non-standard paths
-- **Error Flows** — what happens when input is wrong or system fails
+### Step 1: Identify Scenarios & Domain Context
+1. Call `mcp_blueprint_search_rag(query="{Feature Title} domain concepts AND architecture patterns")` to load any foundational rules or terminology for this feature.
+2. For the target Feature, identify 2–5 distinct user scenarios:
+   - **Happy Path** — the normal successful interaction
+   - **Alternative Flows** — valid but non-standard paths
+   - **Error Flows** — what happens when input is wrong or system fails
 
 ### Step 2: Create Use Case Artifacts
 For each scenario, create a `UC-xxx` using `create_artifact`:
