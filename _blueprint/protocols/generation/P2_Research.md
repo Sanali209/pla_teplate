@@ -15,6 +15,7 @@ For each, generate 2–3 concrete Research Questions (the unknowns that block de
 
 ### Step 2: Create Research Spike Artifact
 Use `create_artifact` with `type: Research` and `templates/Research_Tpl.md` as structure.
+- `id`: **MUST follow RS-xxx format** (e.g., `RS-001`). **DO NOT use RSH-**.
 - `hypothesis`: a falsifiable statement ("If we use X, then we can achieve Y")
 - `parent_goal`: link to the relevant GL ID
 

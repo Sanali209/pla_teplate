@@ -27,7 +27,15 @@ PROMPT_MAP: dict[str, str] = {
     "e1_sprint_execution": BLUEPRINT_ROOT / "protocols" / "execution" / "E1_Sprint_Execution.md",
     "meta_rules":          BLUEPRINT_ROOT / "protocols" / "meta" / "Metadata_Schema.md",
     "self_critic":         BLUEPRINT_ROOT / "protocols" / "review" / "R1_Agent_Self_Critic.md",
+    "r2_user_critique":    BLUEPRINT_ROOT / "protocols" / "review" / "R2_User_Critique_Process.md",
     "fix_protocol":        BLUEPRINT_ROOT / "protocols" / "review" / "R3_Fix_and_Refactor.md",
+    "s4_rejection_handler": BLUEPRINT_ROOT / "protocols" / "interactive" / "S4_Rejection_Handler.md",
+    # Meta protocols
+    "meta_rules":          BLUEPRINT_ROOT / "protocols" / "meta" / "Metadata_Schema.md",
+    "file_naming":         BLUEPRINT_ROOT / "protocols" / "meta" / "File_Naming.md",
+    "validation_rules":    BLUEPRINT_ROOT / "protocols" / "meta" / "Validation_Rules.md",
+    "state_machine":       BLUEPRINT_ROOT / "protocols" / "meta" / "State_Machine.md",
+    "agent_quick_ref":     BLUEPRINT_ROOT / "protocols" / "meta" / "Agent_Quick_Reference.md",
 }
 
 DESCRIPTIONS: dict[str, str] = {
@@ -41,7 +49,15 @@ DESCRIPTIONS: dict[str, str] = {
     "p4_dev_sync":  "Generate atomic Tasks and Fuzzing specs from approved Use Cases",
     "meta_rules":   "Metadata schema and file naming rules for all artifacts",
     "self_critic":  "Review an artifact for logical gaps and hallucinations",
+    "r2_user_critique": "Handle user critique: parse rejection reason, fix or archive artifact",
     "fix_protocol": "Apply user critique and re-generate a fixed version of an artifact",
+    "s4_rejection_handler": "Decide whether to fix+resubmit or archive a NEEDS_FIX/REJECTED artifact",
+    # Meta
+    "meta_rules":   "Metadata schema and file naming rules for all artifacts",
+    "file_naming":  "ID prefixes, directory rules, and file naming conventions",
+    "validation_rules": "Gate rules G1-G7, soft warnings W1-W4, forbidden transitions",
+    "state_machine": "Artifact lifecycle states and transition diagram",
+    "agent_quick_ref": "One-page cheat sheet: IDs, statuses, tool signatures, anti-patterns",
 }
 
 

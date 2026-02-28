@@ -51,10 +51,17 @@ The Blueprint is divided into strict chronological and functional folders. Do no
 - **`meta/`**: Rules on traceability, state machines, and naming conventions.
 
 ### 5. `skills/` & `.vectordb/` (Agentic RAG)
-- What it is: The passive knowledge base for context injection.
-- **`skills/`**: Markdown files containing reusable code snippets, framework best practices, and setup guides.
-- **`.vectordb/`**: Local ChromaDB instance. The `mcp_blueprint_index_knowledge` tool vectorize files from `skills/`, `session_logs/`, `brain/`, and `Knowledge_Raw/` so they can be retrieved via semantic search during task generation.
-
+- What it is: The passive knowledge base for deep context injection.
+- **`skills/`**: Markdown files containing reusable code snippets, framework best practices, setup guides, and executable Python scripts (`scripts/`).
+- **`.vectordb/`**: Local ChromaDB instance. The `mcp_blueprint_index_knowledge` tool vectorizes files from `skills/`, `session_logs/`, `brain/`, and `Knowledge_Raw/`. 
+- **Integration:** This knowledge is retrieved via semantic search across the entire pipeline: 
+  - `P0` (Index raw data)
+  - `P0.5` (Find anti-patterns during bug triage)
+  - `P2` (Find past R&D solutions)
+  - `P3` (Load architecture patterns)
+  - `P4` (Inject tech skills into tasks)
+  - `E1` (Load best practices before coding)
+  - `R1.5` (Load specific code review checklists)
 ---
 
 ## 🚦 Core Philosophy & Rules

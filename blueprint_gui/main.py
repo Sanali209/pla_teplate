@@ -41,6 +41,7 @@ STATUS_COLORS: dict[str, str] = {
     "APPROVED":    "#2d6a2d",
     "REVIEW":      "#7a6b00",
     "NEEDS_FIX":   "#7a2020",
+    "REJECTED":    "#5a0808",
     "BLOCKED":     "#3a3a3a",
     "DRAFT":       "#1a3a5a",
     "DONE":        "#004d40",
@@ -87,6 +88,7 @@ INBOUND_DIRS: dict[str, Path] = {
     "Issues_and_Bugs":BLUEPRINT_ROOT / "inbound" / "Issues_and_Bugs",
     "Knowledge_Raw":  BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw",
     "User_Feedback":  BLUEPRINT_ROOT / "inbound" / "User_Feedback",
+    "Session_Logs":   BLUEPRINT_ROOT / "execution" / "session_logs",
 }
 
 INBOUND_PROTOCOL_HINT: dict[str, str] = {
@@ -96,6 +98,7 @@ INBOUND_PROTOCOL_HINT: dict[str, str] = {
     "Issues_and_Bugs":"Protocol: P0.5_Bug_Triage — resolves bugs to Tasks or Use Cases",
     "Knowledge_Raw":  "Protocol: P0_Ingestion or H2_Wiki_Update — feeds Knowledge Base",
     "User_Feedback":  "Protocol: R2_User_Critique → R3_Fix — triggers agent fix cycle",
+    "Session_Logs":   "Protocol: E1_Sprint_Execution — Agent daily work logs",
 }
 
 
@@ -139,7 +142,10 @@ class ArtifactWorkbenchPanel(QWidget):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(4, 4, 0, 4)
+        left_layout.setSpacing(4)
 
+        # Search + pending filter row
+        filter_row = QHBoxLayout()
         search_bar = QLineEdit()
         search_bar.setPlaceholderText("🔍 Filter artifacts…")
         search_bar.setStyleSheet(
@@ -147,13 +153,39 @@ class ArtifactWorkbenchPanel(QWidget):
             " border-radius:4px; padding:3px 6px;"
         )
         search_bar.textChanged.connect(self._filter_tree)
-        left_layout.addWidget(search_bar)
         self._search_bar = search_bar
+        filter_row.addWidget(search_bar, stretch=1)
+
+        self._pending_btn = QPushButton("⚠️")
+        self._pending_btn.setToolTip("Show only NEEDS_FIX and REJECTED artifacts")
+        self._pending_btn.setCheckable(True)
+        self._pending_btn.setFixedWidth(30)
+        self._pending_btn.setStyleSheet(
+            "QPushButton { background:#3a1a0a; color:#f90; border:1px solid #7a4a00;"
+            " border-radius:4px; padding:3px; font-size:11px; }"
+            "QPushButton:checked { background:#7a3000; color:#ffa; border-color:#f90; }"
+            "QPushButton:hover { background:#5a2a00; }"
+        )
+        self._pending_btn.toggled.connect(self._on_pending_toggled)
+        filter_row.addWidget(self._pending_btn)
+        left_layout.addLayout(filter_row)
 
         self._tree = QTreeWidget()
         self._tree.setHeaderLabel("Artifacts")
+        self._tree.setIndentation(14)
         self._tree.itemClicked.connect(self._on_tree_click)
+        self._tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._show_context_menu)
         left_layout.addWidget(self._tree)
+
+        # Status summary bar
+        self._status_bar_lbl = QLabel("")
+        self._status_bar_lbl.setWordWrap(True)
+        self._status_bar_lbl.setStyleSheet(
+            "color:#6a8a9a; font-size:9px; padding:2px 4px;"
+            " background:#111827; border-top:1px solid #2a3a5a;"
+        )
+        left_layout.addWidget(self._status_bar_lbl)
         main_splitter.addWidget(left)
 
         # ── RIGHT: viewer (top) + critique (bottom) ───────────────────────────
@@ -206,7 +238,7 @@ class ArtifactWorkbenchPanel(QWidget):
         self._reject_btn  = QPushButton("❌ REJECT")
         self._approve_btn.clicked.connect(lambda: self._submit("APPROVED"))
         self._change_btn .clicked.connect(lambda: self._submit("NEEDS_FIX"))
-        self._reject_btn .clicked.connect(lambda: self._submit("NEEDS_FIX"))
+        self._reject_btn .clicked.connect(lambda: self._submit("REJECTED"))
         for btn in (self._approve_btn, self._change_btn, self._reject_btn):
             btn.setStyleSheet(
                 "QPushButton { background:#16213e; border:1px solid #2a3a5a;"
@@ -238,29 +270,116 @@ class ArtifactWorkbenchPanel(QWidget):
         self._index: dict[str, dict] = {}
         self._current_path: Path | None = None
         self._current_meta: dict = {}
+        self._pending_only: bool = False
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+
+    _STATUS_EMOJI: dict[str, str] = {
+        "APPROVED": "✅",
+        "DONE":     "✓ ",
+        "REVIEW":   "🔍",
+        "DRAFT":    "📝",
+        "NEEDS_FIX": "🔧",
+        "REJECTED": "❌",
+        "BLOCKED":  "🚫",
+        "ARCHIVED": "📦",
+    }
+
+    _ATTENTION_STATUSES = {"NEEDS_FIX", "REJECTED", "BLOCKED"}
+
+    # The preferred display order for status sub-groups
+    _STATUS_ORDER = [
+        "NEEDS_FIX", "REJECTED", "BLOCKED",  # attention first
+        "REVIEW", "DRAFT",                    # in-progress
+        "APPROVED", "DONE",                   # completed
+        "ARCHIVED",                           # cold storage
+    ]
 
     # ── Refresh / build tree ─────────────────────────────────────────────────
 
     def refresh(self) -> None:
         self._index = {}
         self._tree.clear()
-        for entity_name, cfg in ENTITY_CONFIG.items():
-            root_item = QTreeWidgetItem([entity_name])
-            root_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
-            root_item.setForeground(0, QColor("#8ab"))
-            root_item.setFlags(root_item.flags() & ~Qt.ItemIsSelectable)
-            for entry in _scan_artifacts(entity_name):
-                meta   = entry["meta"]
-                aid    = str(meta.get("id", "?"))
-                title  = str(meta.get("title", meta.get("hypothesis", aid)))
-                status = str(meta.get("status", ""))
-                child  = QTreeWidgetItem([f"{aid}  [{status}]  {title[:45]}"])
-                child.setForeground(0, _color_for_status(status))
-                child.setData(0, Qt.UserRole, entry)
-                root_item.addChild(child)
-                self._index[aid] = entry
-            self._tree.addTopLevelItem(root_item)
+        total = 0
+        status_counts: dict[str, int] = {}
+
+        for entity_name in ENTITY_CONFIG:
+            all_entries = _scan_artifacts(entity_name)
+            if not all_entries:
+                continue
+
+            # Count attention items for header badge
+            attention_count = sum(
+                1 for e in all_entries
+                if str(e["meta"].get("status", "")) in self._ATTENTION_STATUSES
+            )
+            badge = f"  ⚠️ {attention_count}" if attention_count else ""
+            type_item = QTreeWidgetItem([f"{entity_name}{badge}"])
+            type_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
+            type_item.setForeground(0, QColor("#f90" if attention_count else "#8ab"))
+            type_item.setFlags(type_item.flags() & ~Qt.ItemIsSelectable)
+
+            # Group entries by status
+            by_status: dict[str, list] = {}
+            for entry in all_entries:
+                status = str(entry["meta"].get("status", "DRAFT"))
+                by_status.setdefault(status, []).append(entry)
+                status_counts[status] = status_counts.get(status, 0) + 1
+                total += 1
+                self._index[str(entry["meta"].get("id", ""))] = entry
+
+            # Add status sub-groups in defined order
+            ordered = sorted(
+                by_status.items(),
+                key=lambda kv: self._STATUS_ORDER.index(kv[0])
+                    if kv[0] in self._STATUS_ORDER else 99
+            )
+            for status, entries in ordered:
+                emoji = self._STATUS_EMOJI.get(status, "")
+                status_item = QTreeWidgetItem([f"  {emoji} {status}  ({len(entries)})"])
+                status_item.setForeground(0, _color_for_status(status))
+                status_item.setFont(0, QFont("Segoe UI", 8, QFont.Bold))
+                status_item.setFlags(status_item.flags() & ~Qt.ItemIsSelectable)
+
+                for entry in sorted(entries, key=lambda e: str(e["meta"].get("id", ""))):
+                    meta  = entry["meta"]
+                    aid   = str(meta.get("id", "?"))
+                    title = str(meta.get("title", meta.get("hypothesis", "")))
+                    label = f"{aid}  —  {title[:38]}" if title else aid
+                    child = QTreeWidgetItem([label])
+                    child.setForeground(0, _color_for_status(status))
+                    child.setData(0, Qt.UserRole, entry)
+                    # Bold attention items
+                    if status in self._ATTENTION_STATUSES:
+                        f = QFont("Segoe UI", 9)
+                        f.setBold(True)
+                        child.setFont(0, f)
+                    status_item.addChild(child)
+
+                type_item.addChild(status_item)
+
+            self._tree.addTopLevelItem(type_item)
+
         self._tree.expandAll()
+        # Collapse ARCHIVED and DONE by default to reduce noise
+        for i in range(self._tree.topLevelItemCount()):
+            root = self._tree.topLevelItem(i)
+            for j in range(root.childCount()):
+                child = root.child(j)
+                txt = child.text(0)
+                if "ARCHIVED" in txt or "DONE" in txt:
+                    child.setExpanded(False)
+
+        # Update status bar
+        if total == 0:
+            self._status_bar_lbl.setText("No artifacts found.")
+        else:
+            parts = [f"{cnt} {s}" for s, cnt in sorted(status_counts.items())]
+            self._status_bar_lbl.setText(f"{total} artifacts  ·  " + "  ·  ".join(parts))
+
+        # Re-apply pending filter if active
+        if self._pending_only:
+            self._apply_pending_filter()
 
     # ── Tree interaction ─────────────────────────────────────────────────────
 
@@ -269,18 +388,107 @@ class ArtifactWorkbenchPanel(QWidget):
         if entry:
             self._load(entry["path"], entry["meta"])
 
+    def _on_pending_toggled(self, checked: bool) -> None:
+        self._pending_only = checked
+        if checked:
+            self._apply_pending_filter()
+        else:
+            self._filter_tree(self._search_bar.text())
+
+    def _apply_pending_filter(self) -> None:
+        """Show only NEEDS_FIX and REJECTED artifact leaves."""
+        for i in range(self._tree.topLevelItemCount()):
+            type_node = self._tree.topLevelItem(i)
+            type_visible = False
+            for j in range(type_node.childCount()):
+                status_node = type_node.child(j)
+                txt = status_node.text(0)
+                is_attention = any(s in txt for s in ("NEEDS_FIX", "REJECTED", "BLOCKED"))
+                status_node.setHidden(not is_attention)
+                if is_attention:
+                    status_node.setExpanded(True)
+                    type_visible = True
+            type_node.setHidden(not type_visible)
+            if type_visible:
+                type_node.setExpanded(True)
+
     def _filter_tree(self, text: str) -> None:
+        if self._pending_only:
+            return
         search = text.lower().strip()
         for i in range(self._tree.topLevelItemCount()):
-            group = self._tree.topLevelItem(i)
-            any_visible = False
-            for j in range(group.childCount()):
-                child = group.child(j)
-                match = not search or search in child.text(0).lower()
-                child.setHidden(not match)
-                if match:
-                    any_visible = True
-            group.setHidden(not any_visible and bool(search))
+            type_node = self._tree.topLevelItem(i)
+            type_visible = False
+            for j in range(type_node.childCount()):
+                status_node = type_node.child(j)
+                status_visible = False
+                status_node.setHidden(False)
+                for k in range(status_node.childCount()):
+                    leaf = status_node.child(k)
+                    match = not search or search in leaf.text(0).lower()
+                    leaf.setHidden(not match)
+                    if match:
+                        status_visible = True
+                status_node.setHidden(not status_visible and bool(search))
+                if status_visible or not search:
+                    type_visible = True
+            type_node.setHidden(not type_visible and bool(search))
+
+    def _show_context_menu(self, pos) -> None:
+        """Right-click context menu with quick actions."""
+        item = self._tree.itemAt(pos)
+        if not item:
+            return
+        entry = item.data(0, Qt.UserRole)
+        if not entry:
+            return
+        meta = entry["meta"]
+        aid = str(meta.get("id", ""))
+        if not aid:
+            return
+
+        from PySide6.QtWidgets import QMenu
+        import subprocess, platform
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background:#16213e; color:#d0d8e8; border:1px solid #2a3a5a; }"
+            "QMenu::item:selected { background:#1a3a5a; }"
+        )
+        menu.addAction(f"ID: {aid}").setEnabled(False)
+        menu.addSeparator()
+
+        def do_quick_action(action_str: str, comment: str = "") -> None:
+            self._load(entry["path"], meta)
+            self._feedback_input.setPlainText(comment)
+            self._submit(action_str)
+            self.refresh()
+
+        a_approve = menu.addAction("✅  Approve")
+        a_approve.triggered.connect(lambda: do_quick_action("APPROVED", "Quick-approved"))
+        a_fix = menu.addAction("🔧  Request Fix")
+        a_fix.triggered.connect(lambda: do_quick_action("NEEDS_FIX"))
+        a_reject = menu.addAction("❌  Reject (archive signal)")
+        a_reject.triggered.connect(lambda: do_quick_action("REJECTED", ""))
+        a_archive = menu.addAction("📦  Archive")
+        a_archive.triggered.connect(lambda: do_quick_action("ARCHIVED", "Archived via context menu"))
+        menu.addSeparator()
+
+        a_copy = menu.addAction("📋  Copy ID")
+        def copy_id():
+            from PySide6.QtWidgets import QApplication
+            QApplication.clipboard().setText(aid)
+        a_copy.triggered.connect(copy_id)
+
+        a_open = menu.addAction("📂  Open File")
+        def open_file():
+            path = str(entry["path"])
+            if platform.system() == "Windows":
+                subprocess.Popen(["explorer", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        a_open.triggered.connect(open_file)
+
+        menu.exec_(self._tree.viewport().mapToGlobal(pos))
 
     # ── Load artifact ─────────────────────────────────────────────────────────
 
@@ -724,10 +932,10 @@ class InboundEditorPanel(QWidget):
 # Each entry: (emoji, phase_key, label, short_desc, prompt_file_rel)
 PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("📥", "P0",  "P0 · Ingestion",
-     "Parse raw inbound material into structured Goals/Features extract",
+     "Parse inbound material into an extract and vector-index knowledge (RAG)",
      "protocols/generation/P0_Ingestion.md"),
     ("🐛", "P0.5","P0.5 · Bug Triage",
-     "Triage an issue or bug report into a structured artifact or use case update",
+     "Triage issues, trace root causes, and find anti-patterns via Agentic RAG",
      "protocols/generation/P0_5_Bug_Triage.md"),
     ("🎯", "P1",  "P1 · Inception",
      "Transform project idea → Goals + Feature Map + Roadmap",
@@ -736,34 +944,34 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
      "Break down high-level Goals into actionable Sub-Goals and initial Features",
      "protocols/generation/P1_5_Goal_Decomposition.md"),
     ("🔬", "P2",  "P2 · Research",
-     "Run R&D spikes to eliminate uncertainty in features",
+     "Check RAG for past solutions, then run structural R&D spikes",
      "protocols/generation/P2_Research.md"),
     ("🎨", "P2.5","P2.5 · UI Architecture",
      "Extract and design UI Screen artifacts from visual wireframes",
      "protocols/generation/P2_5_UI_Architecture.md"),
     ("📐", "P3",  "P3 · Analysis",
-     "Decompose approved features → Use Cases + User Flows",
+     "Load AI domain context via RAG, then decompose features → Use Cases",
      "protocols/generation/P3_Analysis.md"),
     ("🗺", "P3.5","P3.5 · UML Generator",
      "Generate PlantUML diagrams from approved Use Cases",
      "protocols/generation/P3_5_UML_Generator.md"),
     ("⚙️", "P4",  "P4 · Dev Sync",
-     "Decompose Use Cases → atomic Tasks + Fuzzing vectors",
+     "Decompose into Tasks + Fuzzing + inject relevant tech skills via RAG",
      "protocols/generation/P4_Dev_Sync.md"),
     ("📅", "P5",  "P5 · Sprint Planning",
      "Organize selected Tasks into an actionable Sprint board",
      "protocols/generation/P5_Sprint_Planning.md"),
     ("⚡", "E1",  "E1 · Sprint Execution",
-     "Execute a Task, run tests, and harvest session logs + knowledge",
+     "Execute task using RAG-skills, enforce TDD, and index new knowledge",
      "protocols/execution/E1_Sprint_Execution.md"),
     ("🪞", "R1",  "R1 · Self-Critique",
      "Auto-review an artifact for logic gaps before human review",
      "protocols/review/R1_Agent_Self_Critic.md"),
     ("🧐", "R1.5","R1.5 · Code Review",
-     "Auto-review source code for syntax, security, and context loss before commit",
+     "Review code against a dynamically RAG-loaded code-review checklist",
      "protocols/review/R1_5_Code_Review.md"),
     ("📬", "R2",  "R2 · User Critique",
-     "Process human feedback file → structured change requests",
+     "Read rejection reason → fix artifact + resubmit, or archive via S4",
      "protocols/review/R2_User_Critique_Process.md"),
     ("🔧", "R3",  "R3 · Fix & Refactor",
      "Apply change requests → revised artifact → resubmit",
@@ -780,6 +988,9 @@ PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
     ("🔄", "S3",  "S3 · Incremental Update",
      "Apply a minor scoped fix without triggering full re-analysis",
      "protocols/interactive/S3_Incremental_Update.md"),
+    ("🗑️", "S4",  "S4 · Rejection Handler",
+     "Decide: fix+resubmit (NEEDS_FIX with reason) or archive (REJECTED empty)",
+     "protocols/interactive/S4_Rejection_Handler.md"),
     ("🧠", "H1",  "H1 · Pattern Recognition",
      "Harvest reusable patterns from completed sprint artifacts",
      "protocols/knowledge/H1_Pattern_Recognition.md"),

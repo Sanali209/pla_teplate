@@ -19,10 +19,14 @@ skinparam StateFontColor #d0d8e8
 [*] --> DRAFT : create_artifact()
 DRAFT --> REVIEW : Agent submits for review
 REVIEW --> APPROVED : User approves (GUI Critique Panel)
-REVIEW --> NEEDS_FIX : User requests changes
-NEEDS_FIX --> REVIEW : Agent applies fix
+REVIEW --> NEEDS_FIX : User requests changes (with reason)
+REVIEW --> REJECTED : User rejects (REJECT button)
+NEEDS_FIX --> REVIEW : Agent applies fix (S4_Rejection_Handler)
+REJECTED --> REVIEW : Agent applies fix (S4_Rejection_Handler with reason)
+REJECTED --> ARCHIVED : Agent archives (S4 — empty/archive reason)
 APPROVED --> DONE : Implementation complete
 APPROVED --> ARCHIVED : Deprecated
+NEEDS_FIX --> ARCHIVED : No fix possible
 DONE --> [*]
 ARCHIVED --> [*]
 @enduml
@@ -56,6 +60,6 @@ The system pauses and requests user confirmation at:
 ## Knowledge Harvesting Triggers
 
 The following events automatically invoke `H1_Pattern_Recognition`:
-- Any artifact transitions from `NEEDS_FIX` back to `APPROVED` (lesson learned)
+- Any artifact transitions from `NEEDS_FIX` or `REJECTED` back to `APPROVED` (lesson learned)
 - A Research Spike returns `verdict: FAILED` (add to Anti_Patterns.md)
 - End of sprint (all Tasks → DONE)

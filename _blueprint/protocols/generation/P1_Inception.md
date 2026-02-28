@@ -18,12 +18,13 @@ Every project requires a technical base (Repo setup, CI/CD, Linters). Before ext
 ### Step 2: Create Business Goal Artifacts
 For each identified business goal from P0, create a file using `create_artifact` MCP tool:
 - `type: Goal`
-- `id: GL-{next_number}` (check artifact index for next available ID)
+- `id: GL-{next_number}` (e.g., `GL-001`). **MUST use GL- prefix.**
 - Use `templates/Goal_Tpl.md` as the structure guide
 - Fill `kpi` with a **measurable metric**, not a vague statement
 
 ### Step 3: Create Feature Map
 For each business goal, identify 2–5 high-level Features. Create `FT-xxx` artifacts:
+- **Prefix MUST be FT-** (e.g., `FT-001`)
 - Set `parent_goal` to the linked GL ID
 - Mark `research_required: true` for any Feature with unknown technical approach
 - Keep titles concise: `Auth Module`, `PDF Generator`, `Payment Flow`

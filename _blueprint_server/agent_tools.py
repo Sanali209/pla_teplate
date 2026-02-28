@@ -16,7 +16,7 @@ from mcp.types import Tool, TextContent, ImageContent
 from config import BLUEPRINT_ROOT
 from fs_reader import read_frontmatter, write_frontmatter, patch_frontmatter, read_body
 from artifact_index import build_index, ID_PREFIXES
-from validate_traceability import validate_traceability, REQUIRED_FIELDS
+from validate_traceability import validate_traceability, check_transition, REQUIRED_FIELDS
 from logger import tool_call, tool_ok, tool_error, gate_blocked, artifact_created, status_change, validate_result
 
 
@@ -32,7 +32,7 @@ ARTIFACT_WRITE_DIRS: dict[str, Path] = {
     "Task":     BLUEPRINT_ROOT / "execution" / "backlog",
 }
 
-VALID_STATUSES = {"DRAFT", "REVIEW", "APPROVED", "NEEDS_FIX", "BLOCKED", "DONE", "ARCHIVED"}
+VALID_STATUSES = {"DRAFT", "REVIEW", "APPROVED", "NEEDS_FIX", "BLOCKED", "DONE", "ARCHIVED", "REJECTED"}
 VALID_TYPES = set(ARTIFACT_WRITE_DIRS.keys())
 
 
@@ -138,6 +138,13 @@ async def _update_status(args: dict) -> list[TextContent]:
         return _err_text(msg)
 
     old_status = entry["meta"].get("status", "UNKNOWN")
+
+    # G6: Enforce forbidden transitions
+    trans_error = check_transition(aid, old_status, new_status)
+    if trans_error:
+        tool_error("update_status", trans_error)
+        return _err_text(f"❌ Forbidden transition: {trans_error}")
+
     patch_frontmatter(entry["path"], {
         "status":         new_status,
         "last_updated":   datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -637,9 +644,111 @@ async def _search_rag(args: dict) -> list[TextContent]:
     except Exception as e:
          return _err_text(f"RAG search failed: {e}")
 
+async def _read_rejection(args: dict) -> list[TextContent]:
+    """Read the most recent feedback entry for a NEEDS_FIX / REJECTED artifact."""
+    artifact_id = args.get("artifact_id", "")
+    tool_call("read_rejection", {"artifact_id": artifact_id})
+
+    fb_path = BLUEPRINT_ROOT / "inbound" / "User_Feedback" / f"FB-{artifact_id}.md"
+    if not fb_path.exists():
+        tool_ok("read_rejection", f"No feedback file found for {artifact_id}")
+        return _text(
+            f"## Rejection Feedback for {artifact_id}\n"
+            "action: NEEDS_FIX\nreason: (no feedback file found — reason unknown)\n"
+            "archive_signal: false\n\n**Decision: FIX** — No feedback file; assume fix needed."
+        )
+
+    raw = fb_path.read_text(encoding="utf-8")
+    # Split by separator and take last header+comment pair
+    parts = [p.strip() for p in raw.split("\n---\n") if p.strip()]
+
+    action = "NEEDS_FIX"
+    reason = ""
+
+    # Walk backwards to find the last YAML block with 'action:'
+    for i in range(len(parts) - 1, -1, -1):
+        if "action:" in parts[i]:
+            for line in parts[i].splitlines():
+                if line.startswith("action:"):
+                    action = line.split(":", 1)[1].strip()
+            # The block immediately after the YAML header is the user comment
+            if i + 1 < len(parts):
+                reason = parts[i + 1].strip()
+            break
+
+    archive_keywords = [
+        "not needed", "не нужен", "remove", "archive",
+        "delete", "архив", "ненужно", "unnecessary"
+    ]
+    is_archive_signal = (
+        action == "REJECTED" and
+        (not reason or any(kw in reason.lower() for kw in archive_keywords))
+    )
+
+    result_text = (
+        f"## Rejection Feedback for {artifact_id}\n"
+        f"action: {action}\n"
+        f"reason: {reason or '(empty)'}\n"
+        f"archive_signal: {str(is_archive_signal).lower()}\n"
+    )
+    if is_archive_signal:
+        result_text += (
+            "\n**Decision: ARCHIVE** — Reason is empty or contains archive signal. "
+            "Call `update_status(artifact_id, 'ARCHIVED')`."
+        )
+    else:
+        result_text += (
+            "\n**Decision: FIX** — Apply stated changes and resubmit to REVIEW "
+            "following S4_Rejection_Handler protocol."
+        )
+
+    tool_ok("read_rejection", f"Parsed: action={action}, archive_signal={is_archive_signal}")
+    return _text(result_text)
+
+
+async def _get_next_id(args: dict) -> list[TextContent]:
+    """Return the next available zero-padded ID for a given artifact type."""
+    atype = args.get("type", "").strip()
+    tool_call("get_next_id", {"type": atype})
+
+    PREFIX_MAP = {
+        "Goal":     "GL",
+        "Feature":  "FT",
+        "Research": "RS",
+        "UseCase":  "UC",
+        "Task":     "TSK",
+    }
+    prefix = PREFIX_MAP.get(atype)
+    if not prefix:
+        msg = f"Unknown type '{atype}'. Valid: {', '.join(PREFIX_MAP)}"
+        tool_error("get_next_id", msg)
+        return _err_text(msg)
+
+    idx = build_index()
+    max_num = 0
+    for art_id in idx:
+        if art_id.startswith(prefix + "-"):
+            try:
+                num = int(art_id.split("-", 1)[1])
+                max_num = max(max_num, num)
+            except ValueError:
+                pass
+
+    next_id = f"{prefix}-{max_num + 1:03d}"
+    tool_ok("get_next_id", f"Next {atype} ID: {next_id}")
+    return _text(
+        f"## Next Available ID for {atype}\n"
+        f"next_id: {next_id}\n"
+        f"prefix: {prefix}-\n"
+        f"existing_count: {max_num}\n"
+        f"Use this ID when calling create_artifact to avoid ID collisions."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
+
 
 _TOOL_HANDLERS = {
     "create_artifact":   _create_artifact,
@@ -660,6 +769,8 @@ _TOOL_HANDLERS = {
     "find_usages":       _find_usages,
     "index_knowledge":   _index_knowledge,
     "search_rag":        _search_rag,
+    "read_rejection":    _read_rejection,
+    "get_next_id":       _get_next_id,
 }
 
 _TOOL_SCHEMAS: list[Tool] = [
@@ -866,6 +977,40 @@ _TOOL_SCHEMAS: list[Tool] = [
                 "top_k": {"type": "number", "description": "Optional. Number of results to return (default 3)."},
             },
             "required": ["query"]
+        },
+    ),
+    Tool(
+        name="read_rejection",
+        description=(
+            "Read and parse the most recent user feedback for a NEEDS_FIX or REJECTED artifact. "
+            "Returns the action, reason, and an archive_signal flag. "
+            "Use this at the start of S4_Rejection_Handler to decide whether to fix or archive."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "artifact_id": {"type": "string", "description": "The artifact ID whose rejection feedback to read (e.g. UC-001)"},
+            },
+            "required": ["artifact_id"]
+        },
+    ),
+    Tool(
+        name="get_next_id",
+        description=(
+            "Return the next available zero-padded ID for a given artifact type. "
+            "ALWAYS call this before create_artifact to avoid ID collisions and hallucinated IDs. "
+            "Returns next_id (e.g. 'GL-003'), prefix, and existing_count."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["Goal", "Feature", "Research", "UseCase", "Task"],
+                    "description": "The artifact type to get the next ID for."
+                },
+            },
+            "required": ["type"]
         },
     ),
 ]

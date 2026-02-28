@@ -9,6 +9,11 @@ Read the feedback file: `_blueprint/inbound/User_Feedback/FB-{artifact_id}.md`
 
 ## Process
 
+### Step 0: Check for Archive Signal
+Call `mcp_blueprint_read_rejection(artifact_id)` to read the latest feedback.
+- If `archive_signal: true` is returned → call `update_status(artifact_id, "ARCHIVED")` and **STOP**. Report: **"Artifact {id} archived — no fix required."**
+- If `archive_signal: false` → continue to Step 1.
+
 ### Step 1: Parse Feedback
 Extract structured change requests from the human's feedback text:
 

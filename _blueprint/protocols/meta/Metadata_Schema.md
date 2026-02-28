@@ -79,6 +79,11 @@ revision_count: 1
 ## Rules enforced by MCP Server (`validate_traceability.py`)
 
 1. Every artifact MUST have an `id` with the correct prefix for its folder.
+   - **Research MUST use `RS-`**. (NEVER use `RSH-`).
+   - **Goals MUST use `GL-`**.
+   - **Features MUST use `FT-`**.
+   - **Tasks MUST use `TSK-`**.
+   - **UseCases MUST use `UC-`**.
 2. Every `parent_*` field MUST resolve to an existing artifact ID.
 3. A `Task` CANNOT exist if its `parent_uc` does not have `status: APPROVED`.
 4. `revision_count` MUST be incremented on every `update_status` call.

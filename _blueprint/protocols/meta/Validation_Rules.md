@@ -12,10 +12,12 @@ Any agent action that violates these rules will be rejected with an error.
 | Rule | Condition | Error Message |
 |---|---|---|
 | **G1: Task Gate** | Task cannot be created if `parent_uc` status ≠ `APPROVED` | "Gate blocked: UseCase must be APPROVED before Tasks are created." |
-| **G2: Analysis Gate** | Use Case cannot be created if parent Feature has `research_required: true` but no linked RS with `verdict: SUCCESS` | "Gate blocked: Feature requires a successful Research Spike first." |
+| **G2: Analysis Gate** | UseCase cannot be created if parent Feature has `research_required: true` but no linked RS with `verdict: SUCCESS` or `PENDING` | "Gate blocked: Feature requires a successful Research Spike first." |
 | **G3: Orphan Check** | Every `parent_goal`, `parent_feat`, `parent_uc`, `origin` must resolve to an existing artifact ID | "Orphan: parent reference '{id}' not found in artifact index." |
-| **G4: Duplicate ID** | No two artifacts may share the same ID | "Duplicate: ID '{id}' already exists." |
+| **G4: Filename Match** | File name must match the declared `id` field | "Duplicate or mismatch: file '{name}' declares id '{id}'." |
 | **G5: Field Completeness** | Required fields (per Metadata_Schema.md) must all be present and non-empty | "Missing required field '{field}' for artifact type '{type}'." |
+| **G6: Forbidden Transition** | `APPROVED → DRAFT/REVIEW` is forbidden; `DONE → any` except ARCHIVED | "Forbidden transition: cannot move from {from} → {to}." |
+| **G7: ID Monotonicity** | IDs must be zero-padded sequential integers; no gaps allowed | "Non-sequential ID detected: expected {expected}, got {actual}." |
 
 ---
 
@@ -25,7 +27,8 @@ Any agent action that violates these rules will be rejected with an error.
 |---|---|
 | **W1** | Feature has no linked Use Cases after 24h |
 | **W2** | Task status is DRAFT for more than 7 days |
-| **W3** | Artifact with `status: NEEDS_FIX` has no linked `FB-*.md` feedback file |
+| **W3** | Artifact with `status: NEEDS_FIX` or `REJECTED` has no linked `FB-*.md` feedback file |
+| **W4** | UseCase has `status: APPROVED` but zero linked Tasks |
 
 ---
 
@@ -45,12 +48,13 @@ The MCP `validate_all()` tool runs this check on every artifact in the index.
 ## Status Transition Rules
 
 ```
-DRAFT ──► REVIEW ──► APPROVED
-                └──► NEEDS_FIX ──► REVIEW (cycle)
-APPROVED ──► DONE
-APPROVED ──► ARCHIVED
+DRAFT ──► REVIEW ──► APPROVED ──► DONE (terminal)
+              │                └──► ARCHIVED
+              ├──► NEEDS_FIX ──► REVIEW (cycle)
+              └──► REJECTED  ──► REVIEW (fixed) | ARCHIVED (no reason)
 ```
 
-**Forbidden transitions:**
-- `APPROVED → DRAFT` (must go through NEEDS_FIX cycle)
-- `DONE → any` (terminal state; create a new version instead)
+**Forbidden transitions (server enforces G6):**
+- `APPROVED → DRAFT` — must go through NEEDS_FIX cycle
+- `APPROVED → REVIEW` — must go through NEEDS_FIX cycle
+- `DONE → DRAFT/REVIEW/APPROVED/...` — DONE is terminal; create a new artifact version instead
