@@ -560,6 +560,8 @@ def _get_vector_collection():
 
 async def _index_knowledge(args: dict) -> list[TextContent]:
     tool_call("index_knowledge", {})
+    server = args.get("__server__")
+
     try:
         collection = _get_vector_collection()
     except Exception as e:
@@ -573,25 +575,54 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
         (BLUEPRINT_ROOT / "execution" / "session_logs", "log"),
     ]
     
-    docs, ids, metadatas = [], [], []
-    
+    files_to_process = []
     for dir_path, src_type in targets:
         if not dir_path.exists():
             continue
         for p in dir_path.rglob("*.md"):
-            if not p.is_file() or p.name in ("sprint_current.md", "task.md"):
-                continue
+            if p.is_file() and p.name not in ("sprint_current.md", "task.md"):
+                files_to_process.append((p, src_type))
+                
+    total_files = len(files_to_process)
+    docs, ids, metadatas = [], [], []
+    
+    for i, (p, src_type) in enumerate(files_to_process):
+        if server:
+            ctx = server.request_context.get()
+            if ctx and ctx.meta and ctx.meta.progressToken:
+                try:
+                    await ctx.session.send_progress_notification(
+                        progress_token=ctx.meta.progressToken,
+                        progress=i,
+                        total=total_files
+                    )
+                except Exception:
+                    pass
+                    
+        try:
+            rel_path = str(p.relative_to(BLUEPRINT_ROOT)).replace("\\", "/")
+            content = p.read_text(encoding="utf-8")
+            # Simple chunking by headers
+            chunks = [chunk.strip() for chunk in content.split("\n## ") if chunk.strip()]
+            for j, chunk in enumerate(chunks):
+                prefix = "## " if j > 0 else ""
+                docs.append(prefix + chunk)
+                doc_id = f"{rel_path}_{j}"
+                ids.append(doc_id)
+                metadatas.append({"source": rel_path, "type": src_type})
+        except Exception:
+            pass
+            
+    if server:
+        # Final progress ping before heavy upsert
+        ctx = server.request_context.get()
+        if ctx and ctx.meta and ctx.meta.progressToken:
             try:
-                rel_path = str(p.relative_to(BLUEPRINT_ROOT)).replace("\\", "/")
-                content = p.read_text(encoding="utf-8")
-                # Simple chunking by headers
-                chunks = [chunk.strip() for chunk in content.split("\n## ") if chunk.strip()]
-                for i, chunk in enumerate(chunks):
-                    prefix = "## " if i > 0 else ""
-                    docs.append(prefix + chunk)
-                    doc_id = f"{rel_path}_{i}"
-                    ids.append(doc_id)
-                    metadatas.append({"source": rel_path, "type": src_type})
+                await ctx.session.send_progress_notification(
+                    progress_token=ctx.meta.progressToken,
+                    progress=total_files,
+                    total=total_files
+                )
             except Exception:
                 pass
                 
@@ -605,7 +636,7 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
             metadatas=metadatas,
             ids=ids
         )
-        msg = f"✅ Successfully indexed {len(docs)} knowledge chunks into ChromaDB."
+        msg = f"✅ Successfully indexed {len(docs)} knowledge chunks (from {total_files} files) into ChromaDB."
         tool_ok("index_knowledge", msg)
         return _text(msg)
     except Exception as e:
@@ -1031,4 +1062,6 @@ def register_agent_tools(server: Server) -> None:
         handler = _TOOL_HANDLERS.get(name)
         if not handler:
             return _err_text(f"Unknown tool '{name}'. Available: {', '.join(_TOOL_HANDLERS)}")
-        return await handler(arguments or {})
+        args = arguments or {}
+        args["__server__"] = server
+        return await handler(args)

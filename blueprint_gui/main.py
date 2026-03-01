@@ -12,6 +12,7 @@ Provides 6 panels:
 from __future__ import annotations
 
 import datetime
+import json
 import subprocess
 import sys
 import tempfile
@@ -38,14 +39,14 @@ from fs_reader import BLUEPRINT_ROOT, read_frontmatter, read_body, patch_frontma
 # ---------------------------------------------------------------------------
 
 STATUS_COLORS: dict[str, str] = {
-    "APPROVED":    "#2d6a2d",
-    "REVIEW":      "#7a6b00",
-    "NEEDS_FIX":   "#7a2020",
-    "REJECTED":    "#5a0808",
-    "BLOCKED":     "#3a3a3a",
-    "DRAFT":       "#1a3a5a",
-    "DONE":        "#004d40",
-    "ARCHIVED":    "#555555",
+    "APPROVED":    "#40a02b",   # Catppuccin Green
+    "REVIEW":      "#df8e1d",   # Catppuccin Yellow
+    "NEEDS_FIX":   "#d20f39",   # Catppuccin Red
+    "REJECTED":    "#e64553",   # Catppuccin Maroon variant
+    "BLOCKED":     "#45475a",   # Surface1 (dark grey)
+    "DRAFT":       "#1e3a5f",   # Dark blue tint
+    "DONE":        "#1e3a2f",   # Dark green tint
+    "ARCHIVED":    "#585b70",   # Overlay0
 }
 
 ENTITY_CONFIG: dict[str, dict[str, Any]] = {
@@ -82,13 +83,20 @@ ENTITY_CONFIG: dict[str, dict[str, Any]] = {
 }
 
 INBOUND_DIRS: dict[str, Path] = {
-    "Briefings":      BLUEPRINT_ROOT / "inbound" / "Briefings",
-    "MindMaps":       BLUEPRINT_ROOT / "inbound" / "MindMaps",
-    "Wireframes":     BLUEPRINT_ROOT / "inbound" / "Wireframes",
-    "Issues_and_Bugs":BLUEPRINT_ROOT / "inbound" / "Issues_and_Bugs",
-    "Knowledge_Raw":  BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw",
-    "User_Feedback":  BLUEPRINT_ROOT / "inbound" / "User_Feedback",
-    "Session_Logs":   BLUEPRINT_ROOT / "execution" / "session_logs",
+    "Briefings":       BLUEPRINT_ROOT / "inbound" / "Briefings",
+    "MindMaps":        BLUEPRINT_ROOT / "inbound" / "MindMaps",
+    "Wireframes":      BLUEPRINT_ROOT / "inbound" / "Wireframes",
+    "Issues_and_Bugs": BLUEPRINT_ROOT / "inbound" / "Issues_and_Bugs",
+    "Knowledge_Raw":   BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw",
+    "User_Feedback":   BLUEPRINT_ROOT / "inbound" / "User_Feedback",
+    "Session_Logs":    BLUEPRINT_ROOT / "execution" / "session_logs",
+    # Reverse Engineering inbound
+    "Codebase_Scans":  BLUEPRINT_ROOT / "inbound" / "Codebase_Scans",
+    "API_Contracts":   BLUEPRINT_ROOT / "inbound" / "API_Contracts",
+    "Test_Suites":     BLUEPRINT_ROOT / "inbound" / "Test_Suites",
+    "Legacy_Docs":     BLUEPRINT_ROOT / "inbound" / "Legacy_Docs",
+    # Brainstorming
+    "Brainstorms":     BLUEPRINT_ROOT / "inbound" / "Brainstorms",
 }
 
 INBOUND_PROTOCOL_HINT: dict[str, str] = {
@@ -99,6 +107,13 @@ INBOUND_PROTOCOL_HINT: dict[str, str] = {
     "Knowledge_Raw":  "Protocol: P0_Ingestion or H2_Wiki_Update — feeds Knowledge Base",
     "User_Feedback":  "Protocol: R2_User_Critique → R3_Fix — triggers agent fix cycle",
     "Session_Logs":   "Protocol: E1_Sprint_Execution — Agent daily work logs",
+    # Reverse Engineering hints
+    "Codebase_Scans": "Protocol: RE0_Codebase_Scanner — paste file tree, cloc output, dependency manifests",
+    "API_Contracts":  "Protocol: RE2_Feature_Inferencer — OpenAPI YAML/JSON, Postman, gRPC .proto",
+    "Test_Suites":    "Protocol: RE3_UseCase_Reconstructor — existing test files reveal intended behavior",
+    "Legacy_Docs":    "Protocol: RE2_Feature_Inferencer — README, old PRDs, wiki exports, changelogs",
+    # Brainstorming
+    "Brainstorms":    "Protocol: P0_Ingestion — BS0 output ready for Goal/Feature extraction",
 }
 
 
@@ -149,7 +164,7 @@ class ArtifactWorkbenchPanel(QWidget):
         search_bar = QLineEdit()
         search_bar.setPlaceholderText("🔍 Filter artifacts…")
         search_bar.setStyleSheet(
-            "background:#111827; color:#d0d8e8; border:1px solid #2a3a5a;"
+            "background:#11111b; color:#cdd6f4; border:1px solid #313244;"
             " border-radius:4px; padding:3px 6px;"
         )
         search_bar.textChanged.connect(self._filter_tree)
@@ -183,7 +198,7 @@ class ArtifactWorkbenchPanel(QWidget):
         self._status_bar_lbl.setWordWrap(True)
         self._status_bar_lbl.setStyleSheet(
             "color:#6a8a9a; font-size:9px; padding:2px 4px;"
-            " background:#111827; border-top:1px solid #2a3a5a;"
+            " background:#11111b; border-top:1px solid #313244;"
         )
         left_layout.addWidget(self._status_bar_lbl)
         main_splitter.addWidget(left)
@@ -198,7 +213,7 @@ class ArtifactWorkbenchPanel(QWidget):
 
         self._trace_label = QLabel("Trace: —")
         self._trace_label.setWordWrap(True)
-        self._trace_label.setStyleSheet("color:#8ab; font-style:italic; padding:2px 4px;")
+        self._trace_label.setStyleSheet("color:#a6adc8; font-style:italic; padding:2px 4px;")
         viewer_layout.addWidget(self._trace_label)
 
         self._content_browser = QTextBrowser()
@@ -214,8 +229,8 @@ class ArtifactWorkbenchPanel(QWidget):
         # Info bar
         self._artifact_label = QLabel("Select an artifact from the tree")
         self._artifact_label.setStyleSheet(
-            "font-weight:bold; color:#8ab; padding:4px;"
-            " background:#16213e; border-radius:4px;"
+            "font-weight:bold; color:#a6adc8; padding:4px;"
+            " background:#181825; border-radius:4px;"
         )
         critique_layout.addWidget(self._artifact_label)
 
@@ -241,9 +256,9 @@ class ArtifactWorkbenchPanel(QWidget):
         self._reject_btn .clicked.connect(lambda: self._submit("REJECTED"))
         for btn in (self._approve_btn, self._change_btn, self._reject_btn):
             btn.setStyleSheet(
-                "QPushButton { background:#16213e; border:1px solid #2a3a5a;"
-                " color:#8ab; border-radius:4px; padding:4px 10px; }"
-                "QPushButton:hover { background:#1a2a4a; color:#d0e8ff; }"
+                "QPushButton { background:#181825; border:1px solid #313244;"
+                " color:#a6adc8; border-radius:4px; padding:4px 10px; }"
+                "QPushButton:hover { background:#24273a; color:#cdd6f4; }"
             )
             btn_row.addWidget(btn)
         fb_layout.addLayout(btn_row)
@@ -316,7 +331,7 @@ class ArtifactWorkbenchPanel(QWidget):
             badge = f"  ⚠️ {attention_count}" if attention_count else ""
             type_item = QTreeWidgetItem([f"{entity_name}{badge}"])
             type_item.setFont(0, QFont("Segoe UI", 9, QFont.Bold))
-            type_item.setForeground(0, QColor("#f90" if attention_count else "#8ab"))
+            type_item.setForeground(0, QColor("#f90" if attention_count else "#a6adc8"))
             type_item.setFlags(type_item.flags() & ~Qt.ItemIsSelectable)
 
             # Group entries by status
@@ -451,8 +466,8 @@ class ArtifactWorkbenchPanel(QWidget):
         import subprocess, platform
         menu = QMenu(self)
         menu.setStyleSheet(
-            "QMenu { background:#16213e; color:#d0d8e8; border:1px solid #2a3a5a; }"
-            "QMenu::item:selected { background:#1a3a5a; }"
+            "QMenu { background:#181825; color:#cdd6f4; border:1px solid #313244; }"
+            "QMenu::item:selected { background:#1e3a5f; }"
         )
         menu.addAction(f"ID: {aid}").setEnabled(False)
         menu.addSeparator()
@@ -500,11 +515,11 @@ class ArtifactWorkbenchPanel(QWidget):
         body = read_body(path)
         html = md_lib.markdown(body, extensions=["fenced_code", "tables"])
         meta_html = "  ".join(
-            f"<span style='color:#8ab'>{k}:</span> <b>{v}</b>"
+            f"<span style='color:#a6adc8'>{k}:</span> <b>{v}</b>"
             for k, v in meta.items()
         )
         self._content_browser.setHtml(
-            f"<div style='background:#16213e;padding:6px 10px;border-radius:4px;"
+            f"<div style='background:#181825;padding:6px 10px;border-radius:4px;"
             f"font-size:11px;margin-bottom:6px'>{meta_html}</div>"
             f"{html}"
         )
@@ -621,7 +636,7 @@ class PlantUMLPanel(QWidget):
         ll.addWidget(self._file_list)
         jar_ok  = _PUML_JAR.exists()
         jar_lbl = QLabel(("✅ " if jar_ok else "❌ ") + _PUML_JAR.name)
-        jar_lbl.setStyleSheet("color:#8ab; font-size:9px;")
+        jar_lbl.setStyleSheet("color:#a6adc8; font-size:9px;")
         ll.addWidget(jar_lbl)
         main_split.addWidget(left)
 
@@ -633,7 +648,7 @@ class PlantUMLPanel(QWidget):
         il.setContentsMargins(4, 4, 4, 0)
         top_bar = QHBoxLayout()
         self._status_label = QLabel("Select a diagram")
-        self._status_label.setStyleSheet("color:#8ab;")
+        self._status_label.setStyleSheet("color:#a6adc8;")
         top_bar.addWidget(self._status_label, stretch=1)
         exp_btn = QPushButton("💾 Export PNG…")
         exp_btn.clicked.connect(self._export_png)
@@ -653,7 +668,7 @@ class PlantUMLPanel(QWidget):
         cl.setContentsMargins(4, 2, 4, 4)
         self._diag_label = QLabel("No diagram selected")
         self._diag_label.setStyleSheet(
-            "font-weight:bold; color:#8ab; background:#16213e;"
+            "font-weight:bold; color:#a6adc8; background:#181825;"
             " border-radius:4px; padding:4px;"
         )
         cl.addWidget(self._diag_label)
@@ -671,9 +686,9 @@ class PlantUMLPanel(QWidget):
         for lbl, act in (("✅ APPROVE", "APPROVED"), ("🔁 REQUEST CHANGE", "NEEDS_FIX")):
             b = QPushButton(lbl)
             b.setStyleSheet(
-                "QPushButton{background:#16213e;border:1px solid #2a3a5a;"
-                "color:#8ab;border-radius:4px;padding:4px 10px;}"
-                "QPushButton:hover{background:#1a2a4a;color:#d0e8ff;}"
+                "QPushButton{background:#181825;border:1px solid #313244;"
+                "color:#a6adc8;border-radius:4px;padding:4px 10px;}"
+                "QPushButton:hover{background:#24273a;color:#cdd6f4;}"
             )
             b.clicked.connect(lambda checked=False, a=act: self._submit(a))
             btn_bar.addWidget(b)
@@ -844,7 +859,7 @@ class InboundEditorPanel(QWidget):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         self._protocol_hint = QLabel("")
-        self._protocol_hint.setStyleSheet("color: #8ab; font-style: italic; padding: 4px;")
+        self._protocol_hint.setStyleSheet("color: #a6adc8; font-style: italic; padding: 4px;")
         right_layout.addWidget(self._protocol_hint)
         
         self._img_label = QLabel()
@@ -926,275 +941,608 @@ class InboundEditorPanel(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# Panel 7: Prompts Launcher
+# Panel 7: Prompts Launcher — improved
 # ---------------------------------------------------------------------------
 
-# Each entry: (emoji, phase_key, label, short_desc, prompt_file_rel)
-PROMPT_PHASES: list[tuple[str, str, str, str, str]] = [
-    ("📥", "P0",  "P0 · Ingestion",
+# Group keys match the filter buttons shown in the top bar.
+# Each entry: (group, emoji, phase_key, label, short_desc, prompt_file_rel)
+PROMPT_PHASES: list[tuple[str, str, str, str, str, str]] = [
+    ("generation", "📥", "P0",   "P0 · Ingestion",
      "Parse inbound material into an extract and vector-index knowledge (RAG)",
      "protocols/generation/P0_Ingestion.md"),
-    ("🐛", "P0.5","P0.5 · Bug Triage",
+    ("generation", "🐛", "P0.5", "P0.5 · Bug Triage",
      "Triage issues, trace root causes, and find anti-patterns via Agentic RAG",
      "protocols/generation/P0_5_Bug_Triage.md"),
-    ("🎯", "P1",  "P1 · Inception",
+    ("generation", "🎯", "P1",   "P1 · Inception",
      "Transform project idea → Goals + Feature Map + Roadmap",
      "protocols/generation/P1_Inception.md"),
-    ("🎯", "P1.5","P1.5 · Goal Decomposition",
+    ("generation", "🎯", "P1.5", "P1.5 · Goal Decomposition",
      "Break down high-level Goals into actionable Sub-Goals and initial Features",
      "protocols/generation/P1_5_Goal_Decomposition.md"),
-    ("🔬", "P2",  "P2 · Research",
+    ("generation", "🔬", "P2",   "P2 · Research",
      "Check RAG for past solutions, then run structural R&D spikes",
      "protocols/generation/P2_Research.md"),
-    ("🎨", "P2.5","P2.5 · UI Architecture",
+    ("generation", "🎨", "P2.5", "P2.5 · UI Architecture",
      "Extract and design UI Screen artifacts from visual wireframes",
      "protocols/generation/P2_5_UI_Architecture.md"),
-    ("📐", "P3",  "P3 · Analysis",
+    ("generation", "📐", "P3",   "P3 · Analysis",
      "Load AI domain context via RAG, then decompose features → Use Cases",
      "protocols/generation/P3_Analysis.md"),
-    ("🗺", "P3.5","P3.5 · UML Generator",
+    ("generation", "🗺", "P3.5", "P3.5 · UML Generator",
      "Generate PlantUML diagrams from approved Use Cases",
      "protocols/generation/P3_5_UML_Generator.md"),
-    ("⚙️", "P4",  "P4 · Dev Sync",
+    ("generation", "⚙️", "P4",   "P4 · Dev Sync",
      "Decompose into Tasks + Fuzzing + inject relevant tech skills via RAG",
      "protocols/generation/P4_Dev_Sync.md"),
-    ("📅", "P5",  "P5 · Sprint Planning",
+    ("generation", "📅", "P5",   "P5 · Sprint Planning",
      "Organize selected Tasks into an actionable Sprint board",
      "protocols/generation/P5_Sprint_Planning.md"),
-    ("⚡", "E1",  "E1 · Sprint Execution",
+    ("execution",  "⚡", "E1",   "E1 · Sprint Execution",
      "Execute task using RAG-skills, enforce TDD, and index new knowledge",
      "protocols/execution/E1_Sprint_Execution.md"),
-    ("🪞", "R1",  "R1 · Self-Critique",
+    ("review",     "🪞", "R1",   "R1 · Self-Critique",
      "Auto-review an artifact for logic gaps before human review",
      "protocols/review/R1_Agent_Self_Critic.md"),
-    ("🧐", "R1.5","R1.5 · Code Review",
+    ("review",     "🧐", "R1.5", "R1.5 · Code Review",
      "Review code against a dynamically RAG-loaded code-review checklist",
      "protocols/review/R1_5_Code_Review.md"),
-    ("📬", "R2",  "R2 · User Critique",
+    ("review",     "📬", "R2",   "R2 · User Critique",
      "Read rejection reason → fix artifact + resubmit, or archive via S4",
      "protocols/review/R2_User_Critique_Process.md"),
-    ("🔧", "R3",  "R3 · Fix & Refactor",
+    ("review",     "🔧", "R3",   "R3 · Fix & Refactor",
      "Apply change requests → revised artifact → resubmit",
      "protocols/review/R3_Fix_and_Refactor.md"),
-    ("✅", "R4",  "R4 · UML Validator",
+    ("review",     "✅", "R4",   "R4 · UML Validator",
      "Cross-check UML draft against parent UseCase requirements",
      "protocols/review/R4_UML_Validator.md"),
-    ("⏸", "S1",  "S1 · Wait For Approval",
+    ("interactive","💡", "BS0",  "BS0 · Brainstorm Session",
+     "Facilitate an interactive brainstorm yielding structured problem/value/features",
+     "protocols/interactive/BS0_Brainstorm_Session.md"),
+    ("interactive","⏸", "S1",   "S1 · Wait For Approval",
      "Pause agent and request human review before continuing",
      "protocols/interactive/S1_Wait_For_Approval.md"),
-    ("⚖️", "S2",  "S2 · Conflict Resolution",
+    ("interactive","⚖️", "S2",   "S2 · Conflict Resolution",
      "Surface contradictions between artifacts for human decision",
      "protocols/interactive/S2_Conflict_Resolution.md"),
-    ("🔄", "S3",  "S3 · Incremental Update",
+    ("interactive","🔄", "S3",   "S3 · Incremental Update",
      "Apply a minor scoped fix without triggering full re-analysis",
      "protocols/interactive/S3_Incremental_Update.md"),
-    ("🗑️", "S4",  "S4 · Rejection Handler",
+    ("interactive","🗑️", "S4",   "S4 · Rejection Handler",
      "Decide: fix+resubmit (NEEDS_FIX with reason) or archive (REJECTED empty)",
      "protocols/interactive/S4_Rejection_Handler.md"),
-    ("🧠", "H1",  "H1 · Pattern Recognition",
+    ("knowledge",  "🧠", "H1",   "H1 · Pattern Recognition",
      "Harvest reusable patterns from completed sprint artifacts",
      "protocols/knowledge/H1_Pattern_Recognition.md"),
-    ("📖", "H2",  "H2 · Wiki Update",
+    ("knowledge",  "📖", "H2",   "H2 · Wiki Update",
      "Sync Terminology.md with new domain terms from recent artifacts",
      "protocols/knowledge/H2_Wiki_Update.md"),
+    # ── Reverse Engineering ──
+    ("re", "🔍", "RE0",  "RE0 · Codebase Scanner",
+     "Scan tech stack, modules, dependencies → tech_profile.md",
+     "protocols/reverse/RE0_Codebase_Scanner.md"),
+    ("re", "🏗", "RE1",  "RE1 · Architecture Extractor",
+     "Extract architecture pattern + PlantUML component diagram + GL-000/FT-000",
+     "protocols/reverse/RE1_Architecture_Extractor.md"),
+    ("re", "🔬", "RE2",  "RE2 · Feature Inferencer",
+     "Infer Goals + Features from API contracts, UI routes, README, legacy docs",
+     "protocols/reverse/RE2_Feature_Inferencer.md"),
+    ("re", "🗂", "RE3",  "RE3 · Use Case Reconstructor",
+     "Rebuild Use Cases from handlers, service methods, validation logic, tests",
+     "protocols/reverse/RE3_UseCase_Reconstructor.md"),
+    ("re", "🩺", "RE4",  "RE4 · Debt Scanner",
+     "Scan TODO/FIXME/skipped tests, detect gaps, create TSK for critical debt",
+     "protocols/reverse/RE4_Debt_Scanner.md"),
+    ("re", "🔗", "RE5",  "RE5 · RE Hand-off",
+     "Validate traceability, generate coverage report, resume standard pipeline",
+     "protocols/reverse/RE5_Handoff.md"),
 ]
+
+# Ordered group definitions for the filter button bar
+_PROMPT_GROUPS: list[tuple[str, str]] = [
+    ("all",         "🔷 All"),
+    ("generation",  "📥 Generation"),
+    ("review",      "🔬 Review"),
+    ("execution",   "⚡ Execution"),
+    ("interactive", "💬 Interactive"),
+    ("knowledge",   "🧠 Knowledge"),
+    ("re",          "🔍 Reverse"),
+]
+
+_RECENT_PATH: Path = BLUEPRINT_ROOT / ".recent_prompts.json"
+_MAX_RECENT  = 5
 
 
 class PromptsPanel(QWidget):
-    """Panel 7: copy-paste ready prompt cards for each protocol phase."""
+    """
+    Panel 7: improved protocol launcher.
+    Features: phase-group filter buttons, collapsible context preview,
+    Copy+Ctx / Copy Raw dual buttons, file-status badges,
+    inline side viewer, compact mode, recently-used ribbon.
+    """
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        # ── Top bar ──────────────────────────────────────────────────────────
+        # ── 1. Recently-used ribbon ───────────────────────────────────────────
+        recent_bar = QWidget()
+        recent_bar.setFixedHeight(30)
+        recent_bar.setStyleSheet("background:#11111b; border-bottom:1px solid #313244;")
+        rl = QHBoxLayout(recent_bar)
+        rl.setContentsMargins(8, 4, 8, 4)
+        rl.setSpacing(6)
+        rl.addWidget(QLabel("<span style='color:#a6adc8;font-size:10px;'>Recent:</span>"))
+        self._recent_btns: list[QPushButton] = []
+        for _ in range(_MAX_RECENT):
+            b = QPushButton()
+            b.setFixedHeight(22)
+            b.setStyleSheet(
+                "QPushButton{background:#24273a;color:#89dceb;border:1px solid #45475a;"
+                "border-radius:10px;padding:2px 10px;font-size:10px;}"
+                "QPushButton:hover{background:#1e4a6a;color:#cba6f7;}"
+            )
+            b.hide()
+            self._recent_btns.append(b)
+            rl.addWidget(b)
+        rl.addStretch()
+        clear_r = QPushButton("🗑 Clear")
+        clear_r.setFixedHeight(22)
+        clear_r.setStyleSheet(
+            "QPushButton{background:transparent;color:#585b70;border:none;font-size:10px;}"
+            "QPushButton:hover{color:#cdd6f4;}"
+        )
+        clear_r.clicked.connect(self._clear_recent)
+        rl.addWidget(clear_r)
+        outer.addWidget(recent_bar)
+
+        # ── 2. Top bar: search + group buttons + compact toggle ───────────────
         top_bar = QWidget()
-        top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(8, 6, 8, 6)
+        top_bar.setFixedHeight(40)
+        top_bar.setStyleSheet("background:#11111b; border-bottom:1px solid #313244;")
+        tl = QHBoxLayout(top_bar)
+        tl.setContentsMargins(8, 6, 8, 6)
+        tl.setSpacing(6)
 
         self._search = QLineEdit()
         self._search.setPlaceholderText("🔍  Filter phases…")
+        self._search.setFixedHeight(26)
         self._search.textChanged.connect(self._filter)
         self._search.setStyleSheet(
-            "background:#111827; color:#d0d8e8; border:1px solid #2a3a5a;"
-            " border-radius:4px; padding:4px 8px;"
+            "background:#11111b;color:#cdd6f4;border:1px solid #313244;"
+            "border-radius:4px;padding:3px 8px;"
         )
-        top_layout.addWidget(self._search)
+        tl.addWidget(self._search, stretch=1)
 
-        context_btn = QPushButton("↻ Refresh Context")
-        context_btn.clicked.connect(self._build_context)
-        top_layout.addWidget(context_btn)
+        self._group_btns: dict[str, QPushButton] = {}
+        for key, name in _PROMPT_GROUPS:
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setFixedHeight(26)
+            btn.setStyleSheet(
+                "QPushButton{background:#181825;color:#a6adc8;border:1px solid #313244;"
+                "border-radius:4px;padding:2px 8px;font-size:10px;}"
+                "QPushButton:checked{background:#1e3a5f;color:#89dceb;border-color:#89b4fa;}"
+                "QPushButton:hover{color:#cdd6f4;}"
+            )
+            btn.clicked.connect(lambda checked=False, k=key: self._on_group_changed(k))
+            tl.addWidget(btn)
+            self._group_btns[key] = btn
+        self._group_btns["all"].setChecked(True)
+        self._active_group = "all"
+
+        ctx_btn = QPushButton("↻")
+        ctx_btn.setToolTip("Refresh context snapshot")
+        ctx_btn.setFixedSize(26, 26)
+        ctx_btn.clicked.connect(self._build_context)
+        tl.addWidget(ctx_btn)
+
+        self._compact_btn = QPushButton("≡ Compact")
+        self._compact_btn.setCheckable(True)
+        self._compact_btn.setFixedHeight(26)
+        self._compact_btn.setStyleSheet(
+            "QPushButton{background:#181825;color:#a6adc8;border:1px solid #313244;"
+            "border-radius:4px;padding:2px 8px;font-size:10px;}"
+            "QPushButton:checked{background:#1e3a5f;color:#89dceb;border-color:#89b4fa;}"
+            "QPushButton:hover{color:#cdd6f4;}"
+        )
+        self._compact_btn.clicked.connect(self._toggle_compact)
+        tl.addWidget(self._compact_btn)
         outer.addWidget(top_bar)
 
-        # ── Cards scroll area ─────────────────────────────────────────────────
+        # ── 3. Context snapshot (collapsible) ─────────────────────────────────
+        ctx_toggle_bar = QWidget()
+        ctx_toggle_bar.setFixedHeight(26)
+        ctx_toggle_bar.setStyleSheet("background:#11111b; border-bottom:1px solid #313244;")
+        ctl = QHBoxLayout(ctx_toggle_bar)
+        ctl.setContentsMargins(8, 2, 8, 2)
+        self._ctx_toggle_btn = QPushButton("▼ Context Snapshot")
+        self._ctx_toggle_btn.setCheckable(True)
+        self._ctx_toggle_btn.setChecked(True)
+        self._ctx_toggle_btn.setStyleSheet(
+            "QPushButton{background:transparent;color:#a6adc8;border:none;"
+            "font-size:10px;text-align:left;padding:4px 0;}"
+            "QPushButton:hover{color:#cdd6f4;}"
+        )
+        self._ctx_toggle_btn.clicked.connect(self._toggle_context)
+        ctl.addWidget(self._ctx_toggle_btn)
+        ctl.addStretch()
+        outer.addWidget(ctx_toggle_bar)
+
+        self._ctx_browser = QTextBrowser()
+        self._ctx_browser.setFixedHeight(60)
+        self._ctx_browser.setStyleSheet(
+            "QTextBrowser{background:#11111b;color:#a6adc8;border:none;"
+            "border-bottom:1px solid #313244;padding:4px 12px;font-size:10px;}"
+        )
+        outer.addWidget(self._ctx_browser)
+
+        # ── 4. Main splitter: card list | inline viewer ───────────────────────
+        self._main_splitter = QSplitter(Qt.Horizontal)
+
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
-        self._scroll.setStyleSheet("QScrollArea { border: none; }")
+        self._scroll.setStyleSheet("QScrollArea{border:none;}")
         self._cards_container = QWidget()
         self._cards_layout = QVBoxLayout(self._cards_container)
-        self._cards_layout.setSpacing(6)
-        self._cards_layout.setContentsMargins(8, 4, 8, 8)
+        self._cards_layout.setSpacing(4)
+        self._cards_layout.setContentsMargins(8, 6, 8, 8)
         self._scroll.setWidget(self._cards_container)
-        outer.addWidget(self._scroll)
+        self._main_splitter.addWidget(self._scroll)
 
-        # Context snapshot shown in each copied prompt
+        # Inline viewer (hidden until user clicks "👁 View")
+        self._viewer_widget = QWidget()
+        self._viewer_widget.setMinimumWidth(280)
+        vl = QVBoxLayout(self._viewer_widget)
+        vl.setContentsMargins(4, 4, 4, 4)
+        vtop = QHBoxLayout()
+        self._viewer_title = QLabel()
+        self._viewer_title.setStyleSheet(
+            "color:#89dceb;font-weight:bold;font-size:11px;padding:2px;"
+        )
+        vtop.addWidget(self._viewer_title, stretch=1)
+        close_v = QPushButton("✕ Close")
+        close_v.setFixedHeight(22)
+        close_v.setStyleSheet(
+            "QPushButton{background:#1e1e2e;color:#a6adc8;border:1px solid #313244;"
+            "border-radius:4px;padding:1px 8px;font-size:10px;}"
+            "QPushButton:hover{color:#cdd6f4;}"
+        )
+        close_v.clicked.connect(self._close_inline_viewer)
+        vtop.addWidget(close_v)
+        vl.addLayout(vtop)
+        self._viewer_browser = QTextBrowser()
+        self._viewer_browser.setStyleSheet(
+            "QTextBrowser{background:#11111b;color:#cdd6f4;border:none;}"
+        )
+        vl.addWidget(self._viewer_browser)
+        self._viewer_widget.hide()
+        self._main_splitter.addWidget(self._viewer_widget)
+
+        outer.addWidget(self._main_splitter)
+
+        # State
         self._context_snapshot: str = ""
-        self._cards: list[dict] = []  # {widget, label_text}
+        self._cards: list[dict] = []
+        self._compact_mode = False
 
         self._build_cards()
         self._build_context()
+        self._update_recent_ribbon()
 
-    # ── Build cards ──────────────────────────────────────────────────────────
+    # ── Build cards ───────────────────────────────────────────────────────────
 
     def _build_cards(self) -> None:
         self._cards = []
-        for emoji, phase_key, label, desc, rel_path in PROMPT_PHASES:
-            card = self._make_card(emoji, phase_key, label, desc, rel_path)
-            self._cards.append({"widget": card["frame"], "label": label.lower()})
+        for group, emoji, phase_key, label, desc, rel_path in PROMPT_PHASES:
+            card = self._make_card(group, emoji, label, desc, rel_path)
+            self._cards.append({
+                "widget":   card["frame"],
+                "label":    label.lower(),
+                "group":    group,
+                "desc_lbl": card["desc_lbl"],
+            })
             self._cards_layout.addWidget(card["frame"])
         self._cards_layout.addStretch()
 
-    def _make_card(self, emoji: str, phase_key: str, label: str, desc: str, rel_path: str) -> dict:
+    def _make_card(
+        self, group: str, emoji: str, label: str, desc: str, rel_path: str
+    ) -> dict:
+        file_ok = (BLUEPRINT_ROOT / rel_path).exists()
+
         frame = QFrame()
         frame.setFrameShape(QFrame.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: #16213e; border: 1px solid #2a3a5a; border-radius: 6px; padding: 4px; }"
-            "QFrame:hover { border-color: #4a8acc; }"
+            "QFrame{background:#181825;border:1px solid #313244;"
+            "border-radius:6px;padding:2px;}"
+            "QFrame:hover{border-color:#89b4fa;}"
         )
         row = QHBoxLayout(frame)
-        row.setContentsMargins(10, 8, 10, 8)
+        row.setContentsMargins(8, 5, 8, 5)
+        row.setSpacing(6)
 
-        # Left: emoji + title + desc
+        # Status badge
+        dot = QLabel("🟢" if file_ok else "🔴")
+        dot.setStyleSheet("font-size:9px;")
+        dot.setToolTip(
+            "Protocol file found" if file_ok
+            else f"File missing: {rel_path}"
+        )
+        row.addWidget(dot)
+
+        # Left: title + desc
         left = QVBoxLayout()
+        left.setSpacing(1)
         title_lbl = QLabel(f"{emoji}  <b>{label}</b>")
         title_lbl.setTextFormat(Qt.RichText)
-        title_lbl.setStyleSheet("color:#d0e8ff; font-size:12px;")
+        title_lbl.setStyleSheet("color:#cdd6f4;font-size:11px;")
         desc_lbl = QLabel(desc)
-        desc_lbl.setStyleSheet("color:#8ab; font-size:10px;")
+        desc_lbl.setStyleSheet("color:#a6adc8;font-size:10px;")
         desc_lbl.setWordWrap(True)
         left.addWidget(title_lbl)
         left.addWidget(desc_lbl)
         row.addLayout(left, stretch=1)
 
-        # Right: buttons
+        # Right: three buttons
         btn_col = QVBoxLayout()
-        btn_col.setSpacing(4)
+        btn_col.setSpacing(3)
 
-        copy_btn = QPushButton("📋 Copy Prompt")
-        copy_btn.setFixedWidth(130)
-        copy_btn.setStyleSheet(
-            "QPushButton { background:#1a3a5a; color:#7dd; border:1px solid #2a5a8a;"
-            " border-radius:4px; padding:4px 8px; font-size:10px; }"
-            "QPushButton:hover { background:#1e4a6a; color:#aef; }"
+        _card_btn_style = (
+            "QPushButton{{background:{bg};color:{fg};border:1px solid {bd};"
+            "border-radius:4px;padding:2px 6px;font-size:10px;}}"
+            "QPushButton:hover{{background:{hbg};color:{hfg};}}"
+            "QPushButton:disabled{{color:#4a6a7a;border-color:#1e2a3a;}}"
         )
-        copy_btn.clicked.connect(lambda checked=False, r=rel_path, l=label: self._copy_prompt(r, l))
 
-        view_btn = QPushButton("👁 View Full")
-        view_btn.setFixedWidth(130)
+        copy_ctx_btn = QPushButton("📋 Copy+Ctx")
+        copy_ctx_btn.setFixedWidth(112)
+        copy_ctx_btn.setFixedHeight(22)
+        copy_ctx_btn.setEnabled(file_ok)
+        copy_ctx_btn.setToolTip("Copy prompt + project context")
+        copy_ctx_btn.setStyleSheet(
+            _card_btn_style.format(
+                bg="#1e3a5f", fg="#89dceb", bd="#45475a",
+                hbg="#1e4a6a", hfg="#cba6f7",
+            )
+        )
+        copy_ctx_btn.clicked.connect(
+            lambda checked=False, r=rel_path, lbl=label: self._copy_prompt(r, lbl)
+        )
+
+        copy_raw_btn = QPushButton("📄 Copy Raw")
+        copy_raw_btn.setFixedWidth(112)
+        copy_raw_btn.setFixedHeight(22)
+        copy_raw_btn.setEnabled(file_ok)
+        copy_raw_btn.setToolTip("Copy prompt only — no context block")
+        copy_raw_btn.setStyleSheet(
+            _card_btn_style.format(
+                bg="#181825", fg="#a6adc8", bd="#313244",
+                hbg="#24273a", hfg="#cdd6f4",
+            )
+        )
+        copy_raw_btn.clicked.connect(
+            lambda checked=False, r=rel_path, lbl=label: self._copy_raw(r, lbl)
+        )
+
+        view_btn = QPushButton("👁 View")
+        view_btn.setFixedWidth(112)
+        view_btn.setFixedHeight(22)
+        view_btn.setEnabled(file_ok)
+        view_btn.setToolTip("Preview protocol in side panel")
         view_btn.setStyleSheet(
-            "QPushButton { background:#16213e; color:#8ab; border:1px solid #2a3a5a;"
-            " border-radius:4px; padding:4px 8px; font-size:10px; }"
-            "QPushButton:hover { background:#1a2a4a; color:#d0e8ff; }"
+            _card_btn_style.format(
+                bg="#181825", fg="#94e2d5", bd="#313244",
+                hbg="#24273a", hfg="#cdd6f4",
+            )
         )
-        view_btn.clicked.connect(lambda checked=False, r=rel_path, l=label: self._view_full(r, l))
+        view_btn.clicked.connect(
+            lambda checked=False, r=rel_path, lbl=label: self._view_inline(r, lbl)
+        )
 
-        btn_col.addWidget(copy_btn)
+        btn_col.addWidget(copy_ctx_btn)
+        btn_col.addWidget(copy_raw_btn)
         btn_col.addWidget(view_btn)
         row.addLayout(btn_col)
 
-        return {"frame": frame}
+        return {"frame": frame, "desc_lbl": desc_lbl}
 
     # ── Context snapshot ──────────────────────────────────────────────────────
 
     def _build_context(self) -> None:
-        """Scan artifacts and build a compact context block to inject into prompts."""
+        """Scan artifacts, build context block for injection + update preview widget."""
         lines = ["\n---\n## Current Project Context (auto-injected by Blueprint GUI)\n"]
-        total = 0
-        pending = 0
+        display: list[str] = []
+        total, pending = 0, 0
         for entity_name in ENTITY_CONFIG:
-            arts = _scan_artifacts(entity_name)
-            approved = sum(1 for a in arts if a["meta"].get("status") == "APPROVED")
-            review   = sum(1 for a in arts if a["meta"].get("status") == "REVIEW")
+            arts      = _scan_artifacts(entity_name)
+            approved  = sum(1 for a in arts if a["meta"].get("status") == "APPROVED")
+            review    = sum(1 for a in arts if a["meta"].get("status") == "REVIEW")
             needs_fix = sum(1 for a in arts if a["meta"].get("status") == "NEEDS_FIX")
             if arts:
                 lines.append(
                     f"- **{entity_name}**: {len(arts)} total "
                     f"({approved} approved, {review} in review, {needs_fix} needs_fix)"
                 )
+                display.append(
+                    f"{entity_name}: {len(arts)} total  "
+                    f"✅{approved}  🔄{review}  🔧{needs_fix}"
+                )
             total   += len(arts)
             pending += review + needs_fix
 
         lines.append(f"\n**Total artifacts:** {total}  |  **Pending review:** {pending}")
+        display.append(f"\nTotal: {total}  |  Pending: {pending}")
 
-        # List IDs awaiting review
         waiting = []
         for entity_name in ENTITY_CONFIG:
             for a in _scan_artifacts(entity_name):
                 s = a["meta"].get("status", "")
                 if s in ("REVIEW", "NEEDS_FIX"):
-                    waiting.append(f"{a['meta'].get('id','?')} ({s})")
+                    waiting.append(f"{a['meta'].get('id', '?')} ({s})")
         if waiting:
             lines.append("\n**Awaiting action:** " + ", ".join(waiting))
+            display.append("Awaiting: " + ", ".join(waiting))
 
         self._context_snapshot = "\n".join(lines)
+        self._ctx_browser.setPlainText("\n".join(display))
 
-    # ── Actions ───────────────────────────────────────────────────────────────
+    # ── Copy actions ──────────────────────────────────────────────────────────
 
     def _copy_prompt(self, rel_path: str, label: str) -> None:
+        """Copy protocol text WITH context block appended."""
         proto_path = BLUEPRINT_ROOT / rel_path
-        if proto_path.exists():
-            protocol_text = proto_path.read_text(encoding="utf-8")
-        else:
-            protocol_text = f"# {label}\n\n[Protocol file not found: {rel_path}]"
+        text = (
+            proto_path.read_text(encoding="utf-8")
+            if proto_path.exists()
+            else f"# {label}\n\n[Protocol file not found: {rel_path}]"
+        )
+        QApplication.clipboard().setText(text + self._context_snapshot)
+        self._save_recent(label, rel_path)
+        self._show_copied_toast(f"{label}  +ctx")
 
-        full_text = protocol_text + self._context_snapshot
-        QApplication.clipboard().setText(full_text)
-
-        # Flash feedback — find the button that was clicked
-        self._show_copied_toast(label)
-
-    def _view_full(self, rel_path: str, label: str) -> None:
+    def _copy_raw(self, rel_path: str, label: str) -> None:
+        """Copy protocol text only — no context block."""
         proto_path = BLUEPRINT_ROOT / rel_path
-        dialog_widget = QWidget(self, Qt.Window)
-        dialog_widget.setWindowTitle(f"{label} — Full Protocol")
-        dialog_widget.resize(800, 600)
-        layout = QVBoxLayout(dialog_widget)
-        browser = QTextBrowser()
+        text = (
+            proto_path.read_text(encoding="utf-8")
+            if proto_path.exists()
+            else f"# {label}\n\n[Protocol file not found: {rel_path}]"
+        )
+        QApplication.clipboard().setText(text)
+        self._save_recent(label, rel_path)
+        self._show_copied_toast(f"{label}  raw")
+
+    # ── Inline viewer ─────────────────────────────────────────────────────────
+
+    def _view_inline(self, rel_path: str, label: str) -> None:
+        proto_path = BLUEPRINT_ROOT / rel_path
+        self._viewer_title.setText(f"  {label}")
         if proto_path.exists():
-            html = md_lib.markdown(proto_path.read_text(encoding="utf-8"),
-                                   extensions=["fenced_code", "tables"])
-            browser.setHtml(html)
+            html = md_lib.markdown(
+                proto_path.read_text(encoding="utf-8"),
+                extensions=["fenced_code", "tables"],
+            )
+            self._viewer_browser.setHtml(
+                "<style>"
+                "body{background:#11111b;color:#cdd6f4;font-family:sans-serif;font-size:13px;}"
+                "code{background:#1a2a3a;padding:2px 4px;border-radius:3px;font-size:11px;}"
+                "pre{background:#1a2a3a;padding:8px;border-radius:4px;}"
+                "h1,h2,h3{color:#89dceb;}a{color:#6aacdd;}"
+                "</style>" + html
+            )
         else:
-            browser.setPlainText(f"File not found: {proto_path}")
-        browser.setStyleSheet("background:#111827; color:#d0d8e8;")
-        layout.addWidget(browser)
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(dialog_widget.close)
-        layout.addWidget(close_btn)
-        dialog_widget.show()
+            self._viewer_browser.setPlainText(f"File not found:\n{proto_path}")
+        self._viewer_widget.show()
+        # Give viewer ~40% of the splitter width
+        total = self._main_splitter.width() or 1200
+        self._main_splitter.setSizes([int(total * 0.58), int(total * 0.42)])
+
+    def _close_inline_viewer(self) -> None:
+        self._viewer_widget.hide()
+
+    # ── Filtering & grouping ──────────────────────────────────────────────────
+
+    def _on_group_changed(self, key: str) -> None:
+        self._active_group = key
+        for k, btn in self._group_btns.items():
+            btn.setChecked(k == key)
+        self._apply_visibility()
+
+    def _filter(self, _text: str = "") -> None:
+        self._apply_visibility()
+
+    def _apply_visibility(self) -> None:
+        search = self._search.text().lower().strip()
+        for card in self._cards:
+            group_ok = (self._active_group == "all" or card["group"] == self._active_group)
+            text_ok  = (not search or search in card["label"])
+            card["widget"].setVisible(group_ok and text_ok)
+
+    # ── Compact mode ──────────────────────────────────────────────────────────
+
+    def _toggle_compact(self, checked: bool) -> None:
+        self._compact_mode = checked
+        for card in self._cards:
+            card["desc_lbl"].setVisible(not checked)
+
+    # ── Context panel toggle ──────────────────────────────────────────────────
+
+    def _toggle_context(self, checked: bool) -> None:
+        self._ctx_browser.setVisible(checked)
+        self._ctx_toggle_btn.setText(
+            "▼ Context Snapshot" if checked else "▶ Context Snapshot"
+        )
+
+    # ── Recently used ─────────────────────────────────────────────────────────
+
+    def _load_recent(self) -> list[dict]:
+        try:
+            if _RECENT_PATH.exists():
+                return json.loads(_RECENT_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return []
+
+    def _save_recent(self, label: str, rel_path: str) -> None:
+        recent = self._load_recent()
+        recent = [e for e in recent if e.get("rel_path") != rel_path]
+        recent.insert(0, {"label": label, "rel_path": rel_path})
+        try:
+            _RECENT_PATH.write_text(
+                json.dumps(recent[:_MAX_RECENT], indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
+        self._update_recent_ribbon()
+
+    def _clear_recent(self) -> None:
+        try:
+            if _RECENT_PATH.exists():
+                _RECENT_PATH.unlink()
+        except Exception:
+            pass
+        self._update_recent_ribbon()
+
+    def _update_recent_ribbon(self) -> None:
+        recent = self._load_recent()
+        for i, btn in enumerate(self._recent_btns):
+            if i < len(recent):
+                entry = recent[i]
+                lbl   = entry.get("label", "")
+                short = lbl.split("·")[0].strip() if "·" in lbl else lbl[:12]
+                btn.setText(short)
+                btn.setToolTip(f"Copy: {lbl}")
+                try:
+                    btn.clicked.disconnect()
+                except Exception:
+                    pass
+                btn.clicked.connect(
+                    lambda checked=False, r=entry["rel_path"], l=lbl:
+                    self._copy_prompt(r, l)
+                )
+                btn.show()
+            else:
+                btn.hide()
+
+    # ── Toast & refresh ───────────────────────────────────────────────────────
 
     def _show_copied_toast(self, label: str) -> None:
         toast = QLabel(f"  ✅  Copied: {label}  ", self)
         toast.setStyleSheet(
-            "background:#1a3a1a; color:#4caf50; border:1px solid #2d6a2d;"
-            " border-radius:6px; padding:6px 12px; font-size:11px;"
+            "background:#1e2d1e;color:#a6e3a1;border:1px solid #40a02b;"
+            "border-radius:6px;padding:6px 12px;font-size:11px;"
         )
         toast.adjustSize()
-        # Center at bottom
         x = (self.width() - toast.width()) // 2
         y = self.height() - toast.height() - 20
         toast.move(x, y)
         toast.show()
         QTimer.singleShot(1500, toast.deleteLater)
 
-    def _filter(self, text: str) -> None:
-        search = text.lower().strip()
-        for card in self._cards:
-            card["widget"].setVisible(not search or search in card["label"])
-
     def refresh(self) -> None:
         self._build_context()
+        self._update_recent_ribbon()
 
 
 # ---------------------------------------------------------------------------
@@ -1232,7 +1580,7 @@ class RoadmapPanel(QWidget):
                 item = QTableWidgetItem(val)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 if col_idx == 2:
-                    item.setForeground(QColor("#4caf50"))
+                    item.setForeground(QColor("#a6e3a1"))
                 self._table.setItem(row_idx, col_idx, item)
         self._table.resizeColumnsToContents()
 
@@ -1254,21 +1602,198 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Blueprint Studio")
         self.resize(1400, 900)
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #1a1a2e; color: #d0d8e8; }
-            QTabWidget::pane { border: 1px solid #2a3a5a; }
-            QTabBar::tab { background: #16213e; padding: 6px 16px; color: #8ab; }
-            QTabBar::tab:selected { background: #1a2a4a; color: #d0e8ff; }
-            QTableWidget { gridline-color: #2a3a5a; }
-            QHeaderView::section { background: #16213e; color: #8ab; padding: 4px; }
-            QTreeWidget { border: 1px solid #2a3a5a; }
-            QPushButton { background: #16213e; color: #8ab; border: 1px solid #2a3a5a; padding: 5px 12px; border-radius: 4px; }
-            QPushButton:hover { background: #1a2a4a; color: #d0e8ff; }
-            QPlainTextEdit, QTextBrowser { background: #111827; color: #d0d8e8; border: 1px solid #2a3a5a; }
-            QListWidget { background: #111827; color: #c0c8d8; border: 1px solid #2a3a5a; }
-            QComboBox { background: #16213e; color: #8ab; border: 1px solid #2a3a5a; padding: 3px; }
-            QGroupBox { border: 1px solid #2a3a5a; margin-top: 6px; color: #8ab; }
-            QGroupBox::title { subcontrol-origin: margin; left: 8px; }
+            /* ── Catppuccin Mocha — Blueprint Studio ── */
+
+            QMainWindow, QWidget {
+                background: #1e1e2e;
+                color: #cdd6f4;
+                font-family: 'Segoe UI', 'Inter', sans-serif;
+            }
+
+            /* Tabs */
+            QTabWidget::pane {
+                border: 1px solid #313244;
+                background: #1e1e2e;
+            }
+            QTabBar::tab {
+                background: #181825;
+                color: #a6adc8;
+                padding: 6px 18px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                border: 1px solid transparent;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background: #1e1e2e;
+                color: #cba6f7;
+                border: 1px solid #313244;
+                border-bottom: 2px solid #cba6f7;
+            }
+            QTabBar::tab:hover:!selected { background: #24273a; color: #cdd6f4; }
+
+            /* Tables */
+            QTableWidget {
+                gridline-color: #313244;
+                background: #1e1e2e;
+                alternate-background-color: #181825;
+            }
+            QHeaderView::section {
+                background: #181825;
+                color: #89b4fa;
+                padding: 5px;
+                border: none;
+                border-right: 1px solid #313244;
+                border-bottom: 1px solid #313244;
+                font-weight: bold;
+            }
+
+            /* Tree */
+            QTreeWidget {
+                border: 1px solid #313244;
+                background: #11111b;
+                show-decoration-selected: 1;
+                outline: none;
+            }
+            QTreeWidget::item:selected {
+                background: #313244;
+                color: #cba6f7;
+            }
+            QTreeWidget::item:hover { background: #24273a; }
+
+            /* Lists */
+            QListWidget {
+                background: #11111b;
+                color: #bac2de;
+                border: 1px solid #313244;
+                outline: none;
+            }
+            QListWidget::item:selected {
+                background: #313244;
+                color: #cba6f7;
+            }
+            QListWidget::item:hover { background: #1e1e2e; }
+
+            /* Text areas */
+            QPlainTextEdit, QTextBrowser {
+                background: #11111b;
+                color: #cdd6f4;
+                border: 1px solid #313244;
+                selection-background-color: #45475a;
+                selection-color: #cdd6f4;
+            }
+
+            /* Inputs */
+            QLineEdit {
+                background: #11111b;
+                color: #cdd6f4;
+                border: 1px solid #313244;
+                border-radius: 4px;
+                padding: 3px 8px;
+                selection-background-color: #45475a;
+            }
+            QLineEdit:focus {
+                border: 1px solid #89b4fa;
+            }
+
+            /* Buttons */
+            QPushButton {
+                background: #181825;
+                color: #a6adc8;
+                border: 1px solid #313244;
+                padding: 5px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background: #24273a;
+                color: #cdd6f4;
+                border-color: #585b70;
+            }
+            QPushButton:pressed { background: #313244; }
+            QPushButton:checked {
+                background: #1e3a5f;
+                color: #89b4fa;
+                border-color: #89b4fa;
+            }
+            QPushButton:disabled { color: #45475a; border-color: #24273a; }
+
+            /* ComboBox */
+            QComboBox {
+                background: #181825;
+                color: #a6adc8;
+                border: 1px solid #313244;
+                border-radius: 4px;
+                padding: 3px 6px;
+            }
+            QComboBox:focus { border-color: #89b4fa; }
+            QComboBox QAbstractItemView {
+                background: #181825;
+                color: #cdd6f4;
+                selection-background-color: #313244;
+                selection-color: #cba6f7;
+                border: 1px solid #313244;
+            }
+
+            /* GroupBox */
+            QGroupBox {
+                border: 1px solid #313244;
+                border-radius: 4px;
+                margin-top: 8px;
+                color: #a6adc8;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #89b4fa;
+            }
+
+            /* Splitter */
+            QSplitter::handle {
+                background: #313244;
+                width: 1px;
+                height: 1px;
+            }
+            QSplitter::handle:hover { background: #585b70; }
+
+            /* Scrollbars */
+            QScrollBar:vertical {
+                background: #181825;
+                width: 10px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background: #45475a;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover { background: #585b70; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar:horizontal {
+                background: #181825;
+                height: 10px;
+                border: none;
+            }
+            QScrollBar::handle:horizontal {
+                background: #45475a;
+                border-radius: 5px;
+                min-width: 20px;
+            }
+            QScrollBar::handle:horizontal:hover { background: #585b70; }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+            /* Frames / Cards */
+            QFrame { border: none; }
             QScrollArea { border: none; }
+
+            /* Tooltips */
+            QToolTip {
+                background: #24273a;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                padding: 4px 8px;
+                border-radius: 4px;
+            }
         """)
 
         self._tabs = QTabWidget()
