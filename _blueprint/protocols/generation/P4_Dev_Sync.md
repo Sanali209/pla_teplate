@@ -17,6 +17,10 @@ Before creating tasks, you MUST read the approved PlantUML diagrams (`Sequence`,
 ### Step 2: Decompose Use Case into Tasks
 Create 1–6 `TSK-xxx` artifacts using `create_artifact`. Each task must reference the parent UC via `parent_uc` and use `templates/Task_Tpl.md`.
 
+**Horizontal Dependencies:**
+- If the parent Feature has `dependencies: [FT-xxx]`, ensure the current tasks also reference relevant tasks from the dependency features if they must be sequential.
+- Use the `dependencies: [TSK-xxx]` field in the new task artifact blocks.
+
 **Strict Decomposition Order:**
 1. **DevOps & Repo Setup (Sprint 0):** If processing UC-000 (Technical Foundation), generate technical tasks: `Setup .gitignore`, `Configure Linters (e.g. Ruff/ESLint)`, `Initialize CI/CD Pipeline (e.g. GitHub Actions)`.
 2. **Test-Driven Development (TDD) Foundation:** Before writing any business logic, create one dedicated `[Test]` Task for every upcoming API/Backend/Frontend feature. These tests MUST map to the Use Case Acceptance Criteria.

@@ -19,6 +19,9 @@ from artifact_index import build_index, ID_PREFIXES
 from validate_traceability import validate_traceability, check_transition, REQUIRED_FIELDS
 from logger import tool_call, tool_ok, tool_error, gate_blocked, artifact_created, status_change, validate_result
 import asyncio
+import yaml
+import chromadb
+from chromadb.utils import embedding_functions
 
 _INDEX_CACHE: dict[str, dict] | None = None
 _INDEX_CACHE_LOCK = asyncio.Lock()
@@ -339,22 +342,70 @@ async def _harvest_knowledge(args: dict) -> list[TextContent]:
     topic = args.get("topic", "Unknown")
     description = args.get("description", "")
     code_snippet = args.get("code_snippet", "")
+    metadata = args.get("metadata", {}) # New: {source, confidence, stability, tags}
+    
     tool_call("harvest_knowledge", {"topic": topic})
     
     k_dir = BLUEPRINT_ROOT / "inbound" / "Knowledge_Raw"
     k_dir.mkdir(parents=True, exist_ok=True)
-    learnings_file = k_dir / "new_learnings.md"
     
-    entry = f"\n## {topic}\n{description}\n"
+    # Use topic slug for individual file if possible, or append to new_learnings.md
+    slug = "".join(c if c.isalnum() else "_" for c in topic.lower())[:30]
+    learnings_file = k_dir / f"K_{slug}.md"
+    meta_file = k_dir / f"K_{slug}.meta.yaml"
+    
+    content = f"# {topic}\n\n{description}\n"
     if code_snippet:
-        entry += f"```\n{code_snippet}\n```\n"
-    entry += "---\n"
-    
-    with learnings_file.open("a", encoding="utf-8") as f:
-        f.write(entry)
+        content += f"\n```\n{code_snippet}\n```\n"
         
-    tool_ok("harvest_knowledge", f"Harvested: {topic}")
-    return _text(f"✅ Knowledge harvested: {topic}")
+    with learnings_file.open("w", encoding="utf-8") as f:
+        f.write(content)
+        
+    # Write sidecar metadata
+    import yaml
+    import datetime
+    
+    meta_data = {
+        "topic": topic,
+        "source": metadata.get("source", "Session Log"),
+        "collected_at": datetime.datetime.now().isoformat(),
+        "confidence_score": metadata.get("confidence_score", 1.0),
+        "stability_index": metadata.get("stability_index", "HIGH"),
+        "tags": metadata.get("tags", [])
+    }
+    
+    with meta_file.open("w", encoding="utf-8") as f:
+        yaml.dump(meta_data, f)
+        
+    tool_ok("harvest_knowledge", f"Harvested: {topic} with metadata")
+    return _text(f"✅ Knowledge harvested: {topic} (and sidecar meta created)")
+
+async def _enrich_knowledge_from_web(args: dict) -> list[TextContent]:
+    topic = args.get("topic", "Unknown")
+    urls = args.get("urls", [])
+    tool_call("enrich_knowledge_from_web", {"topic": topic})
+    
+    plan = f"""
+## Enrichment Plan for: {topic}
+
+1. **Search**: Perform `search_web(query="{topic} best practices AND documentation")`.
+2. **Read**: Use `read_url_content` on the top relevant results (or specific URLs: {', '.join(urls) if urls else 'N/A'}).
+3. **Distill**: Summarize findings into:
+   - Technical Overview
+   - Implementation Patterns
+   - Constraints/Caveats
+4. **Persist**: Call `harvest_knowledge` with:
+   - topic: "{topic}"
+   - description: "[Distilled Summary]"
+   - metadata: {{
+       "source": "[Primary URL]",
+       "confidence_score": 0.9,
+       "stability_index": "MEDIUM",
+       "tags": ["web-enriched", "{topic}"]
+     }}
+5. **Index**: Re-run `index_knowledge()` to update the vector store.
+"""
+    return _text(f"✅ Workflow initialized for topic: {topic}\n\nPlease follow these instructions to enrich the project knowledge base:\n{plan}")
 
 
 async def _complete_task(args: dict) -> list[TextContent]:
@@ -407,8 +458,25 @@ async def _search_artifacts(args: dict) -> list[TextContent]:
         if parent_id:
             if not (p_uc == parent_id or p_feat == parent_id or p_goal == parent_id):
                 continue
+
+        # Check status of dependencies
+        deps = meta.get("dependencies", [])
+        if isinstance(deps, str):
+            deps = [d.strip() for d in deps.strip("[]").split(",") if d.strip()]
+        
+        is_blocked = False
+        unmet_deps = []
+        for d in deps:
+            d_entry = idx.get(d)
+            if not d_entry or d_entry["meta"].get("status") != "DONE":
+                is_blocked = True
+                unmet_deps.append(d)
+        
+        status_str = meta.get('status', 'UNKNOWN')
+        if is_blocked:
+            status_str += f" (BLOCKED by {', '.join(unmet_deps)})"
                 
-        results.append(f"- {aid}: {meta.get('title', 'No Title')} [Status: {meta.get('status', 'UNKNOWN')}]")
+        results.append(f"- {aid}: {meta.get('title', 'No Title')} [Status: {status_str}]")
         
     if not results:
         return _text("No matching artifacts found.")
@@ -427,7 +495,17 @@ async def _get_traceability_tree(args: dict) -> list[TextContent]:
     while current_id and current_id in idx:
         entry = idx[current_id]
         meta = entry["meta"]
-        tree.append(f"[{entry['type']}] {current_id}: {meta.get('title', 'No Title')} (Status: {meta.get('status', 'UNKNOWN')})")
+        status = meta.get("status", "UNKNOWN")
+        line = f"[{entry['type']}] {current_id}: {meta.get('title', 'No Title')} (Status: {status})"
+        
+        # Add horizontal dependencies if any
+        deps = meta.get("dependencies", [])
+        if isinstance(deps, str):
+            deps = [d.strip() for d in deps.strip("[]").split(",") if d.strip()]
+        if deps:
+            line += f" -> Deps: {', '.join(deps)}"
+            
+        tree.append(line)
         
         # Follow pointers up the tree
         current_id = meta.get("parent_uc") or meta.get("parent_feat") or meta.get("parent_goal")
@@ -580,8 +658,7 @@ async def _find_usages(args: dict) -> list[TextContent]:
 # RAG AND SKILLS INTEGRATION
 # ---------------------------------------------------------------------------
 def _get_vector_collection():
-    import chromadb
-    from chromadb.utils import embedding_functions
+    db_path = BLUEPRINT_ROOT / ".vectordb"
     db_path = BLUEPRINT_ROOT / ".vectordb"
     client = chromadb.PersistentClient(path=str(db_path))
     # Using the default lightweight sentence-transformers model automatically handles local embeddings
@@ -594,6 +671,16 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
     server = args.get("__server__")
 
     try:
+        db_path = BLUEPRINT_ROOT / ".vectordb"
+        db_path = BLUEPRINT_ROOT / ".vectordb"
+        client = chromadb.PersistentClient(path=str(db_path))
+        
+        # New: Clean slate strategy to prevent bloat/duplicates
+        try:
+            client.delete_collection(name="blueprint_knowledge")
+        except Exception:
+            pass # First run or already deleted
+            
         collection = _get_vector_collection()
     except Exception as e:
          return _err_text(f"Failed to initialize ChromaDB: {e}")
@@ -640,7 +727,20 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
                 docs.append(prefix + chunk)
                 doc_id = f"{rel_path}_{j}"
                 ids.append(doc_id)
-                metadatas.append({"source": rel_path, "type": src_type})
+                
+                # Try to find sidecar metadata
+                meta_file = p.with_suffix(".meta.yaml")
+                file_meta = {"source": rel_path, "type": src_type}
+                if meta_file.exists():
+                    try:
+                        with meta_file.open("r", encoding="utf-8") as f:
+                            side_meta = yaml.safe_load(f)
+                            if side_meta:
+                                for k, v in side_meta.items():
+                                    file_meta[f"meta_{k}"] = v
+                    except Exception:
+                        pass
+                metadatas.append(file_meta)
         except Exception:
             pass
             
@@ -814,6 +914,43 @@ async def _get_next_id(args: dict) -> list[TextContent]:
     )
 
 
+async def _analyze_dependencies(_args: dict) -> list[TextContent]:
+    """Return a JSON dependency graph of all blueprint artifacts."""
+    tool_call("analyze_dependencies", {})
+    idx = await get_cached_index()
+    
+    graph = {}
+    for aid, entry in idx.items():
+        meta = entry.get("meta", {})
+        atype = entry.get("type", "Unknown")
+        
+        # Collect all types of dependencies
+        parents = [
+            meta.get(f) for f in ("parent_goal", "parent_feat", "parent_uc", "origin")
+            if meta.get(f)
+        ]
+        
+        deps = meta.get("dependencies", [])
+        if isinstance(deps, str):
+            import json
+            try:
+                deps = json.loads(deps.replace("'", '"'))
+            except Exception:
+                deps = [d.strip() for d in deps.strip("[]").split(",") if d.strip()]
+            
+        graph[aid] = {
+            "type": atype,
+            "title": meta.get("title", "No Title"),
+            "status": meta.get("status", "UNKNOWN"),
+            "parents": parents,
+            "dependencies": deps
+        }
+    
+    import json
+    tool_ok("analyze_dependencies", f"Graph generated for {len(graph)} artifacts.")
+    return _text(json.dumps(graph, indent=2))
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -840,6 +977,8 @@ _TOOL_HANDLERS = {
     "search_rag":        _search_rag,
     "read_rejection":    _read_rejection,
     "get_next_id":       _get_next_id,
+    "analyze_dependencies": _analyze_dependencies,
+    "enrich_knowledge_from_web": _enrich_knowledge_from_web,
 }
 
 _TOOL_SCHEMAS: list[Tool] = [
@@ -925,13 +1064,22 @@ _TOOL_SCHEMAS: list[Tool] = [
     ),
     Tool(
         name="harvest_knowledge",
-        description="Record newly discovered concepts, API caveats, or patterns.",
+        description="Record newly discovered concepts, API caveats, or patterns with traceability metadata.",
         inputSchema={
             "type": "object",
             "properties": {
                 "topic":        {"type": "string", "description": "Topic name"},
                 "description":  {"type": "string", "description": "Detailed explanation"},
                 "code_snippet": {"type": "string", "description": "Optional code snippet demonstrating the concept"},
+                "metadata": {
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string", "description": "URL or tool name that provided this knowledge"},
+                        "confidence_score": {"type": "number", "description": "Scale 0.0-1.0"},
+                        "stability_index": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+                        "tags": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
             },
             "required": ["topic", "description"],
         },
@@ -1080,6 +1228,23 @@ _TOOL_SCHEMAS: list[Tool] = [
                 },
             },
             "required": ["type"]
+        },
+    ),
+    Tool(
+        name="analyze_dependencies",
+        description="Return a full JSON dependency graph of all artifacts, including horizontal dependencies and parent-child links.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    Tool(
+        name="enrich_knowledge_from_web",
+        description="Search the web for a topic and save distilled insights into Knowledge_Raw with metadata.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Technical topic to research"},
+                "urls": {"type": "array", "items": {"type": "string"}, "description": "Optional specific URLs to ingest"},
+            },
+            "required": ["topic"]
         },
     ),
 ]

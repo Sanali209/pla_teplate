@@ -29,6 +29,7 @@ title: "Feature name"
 status: DRAFT
 priority: HIGH                # HIGH | MEDIUM | LOW
 parent_goal: GL-001           # REQUIRED — reverse path to Goal
+dependencies: []              # [FT-xxx] List of sibling features this depends on
 research_required: false      # true = R&D spike needed before P3
 created_at: 2026-01-01T00:00:00Z
 revision_count: 1
@@ -54,6 +55,7 @@ id: UC-001
 title: "Scenario name"
 status: DRAFT
 parent_feat: FT-001           # REQUIRED — reverse path to Feature
+dependencies: []              # [UC-xxx] List of sibling use cases this depends on
 actors: ["User", "System"]
 research_ref: RS-001          # Optional reference to R&D verdict
 created_at: 2026-01-01T00:00:00Z
@@ -68,6 +70,7 @@ id: TSK-001
 title: "Atomic work item"
 status: DRAFT
 parent_uc: UC-001             # REQUIRED — reverse path to Use Case
+dependencies: []              # [TSK-xxx] List of tasks that must be DONE first
 assignee: ""
 created_at: 2026-01-01T00:00:00Z
 revision_count: 1

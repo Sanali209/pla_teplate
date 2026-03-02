@@ -14,8 +14,10 @@ Additionally check `_blueprint/execution/roadmap.md` to identify the current hig
 
 ### Step 2: Select Sprint scope
 1. Pick a logical cluster of tasks that can be completed in the upcoming sprint.
-2. Ensure selected tasks have their dependencies (e.g. parent Use Cases) already `APPROVED`.
-3. If necessary, surface `Blocked` tasks if they prevent progress on critical path items.
+2. Ensure selected tasks have their parent Use Cases already `APPROVED`.
+3. **Dependency Check:** For each selected task, verify that all entries in its `dependencies` field have `status: DONE`.
+4. If a task has unresolved dependencies, it MUST be removed from the current sprint scope unless the depending task is also in the same sprint and scheduled earlier.
+5. If necessary, surface `Blocked` tasks if they prevent progress on critical path items.
 
 ### Step 3: Start Sprint via MCP
 1. Use the `mcp_blueprint_start_sprint` tool.

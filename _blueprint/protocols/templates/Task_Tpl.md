@@ -3,6 +3,7 @@ id: TSK-{{NUMBER}}
 title: "{{TASK TITLE}}"
 status: DRAFT
 parent_uc: UC-{{NUMBER}}
+dependencies: []              # [TSK-xxx] List of tasks that must be DONE first
 assignee: ""
 layer: backend   # backend | frontend | infra | qa
 created_at: {{ISO_TIMESTAMP}}

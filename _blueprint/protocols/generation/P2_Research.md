@@ -21,7 +21,10 @@ Use `create_artifact` with `type: Research` and `templates/Research_Tpl.md` as s
 
 ### Step 3: Conduct Research
 Attempt to answer each question using:
-1. **Local Knowledge (RAG):** FIRST, call `mcp_blueprint_search_rag(query="{Research Question}")` to check if this was already solved in past session logs, skills, or existing raw knowledge.
+1. **Local Knowledge (RAG):** Call `mcp_blueprint_search_rag(query="{Research Question}")`.
+   - **Enrichment Check:** If the result is EMPTY, has `confidence_score < 0.7`, or is `collected_at > 6 months` ago:
+     - Call `mcp_blueprint_enrich_knowledge_from_web(topic="{topic}")`.
+     - Follow the returned plan to update the local knowledge base before proceeding.
 2. **External Knowledge:** Available documentation in `_blueprint/inbound/Knowledge_Raw/`.
 3. **General Knowledge:** Your own LLM knowledge base.
 4. **Fallback:** If insufficient — flag `verdict: PENDING` and describe what experiment would resolve it.

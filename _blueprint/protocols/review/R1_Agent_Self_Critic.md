@@ -7,7 +7,8 @@ re-read it as a skeptical senior engineer and identify all weaknesses.
 ## Checklist (apply to any artifact type)
 
 ### Logic Checks
-- [ ] Are there any circular references or contradictions in the requirements?
+- [ ] Are there any circular references or contradictions in the requirements or dependencies?
+- [ ] Are all horizontal dependencies (`dependencies` field) pointing to existing artifacts?
 - [ ] Does every decision branch have an outcome? (No dead-ends)
 - [ ] Are all stated constraints actually enforceable?
 - [ ] Is every actor mentioned in flows also defined in the `actors` field?

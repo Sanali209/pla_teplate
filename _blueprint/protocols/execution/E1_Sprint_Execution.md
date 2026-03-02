@@ -35,8 +35,13 @@ Provide the `task_id`, `action` (what you changed/tested), and `result` (any bug
 
 ### Step 4: Knowledge Collection
 As you execute, if you discover new architectural patterns, API caveats, or domain concepts:
-Call the `mcp_blueprint_harvest_knowledge` tool.
-Provide a clear `topic` and `description` (with an optional `code_snippet`). This safely appends the information to `new_learnings.md` without risking file corruption.
+1. Call the `mcp_blueprint_harvest_knowledge` tool.
+2. **Mandatory Metadata:** Provide a clear `topic`, `description`, and the `metadata` object:
+   - `source`: file path or URL
+   - `confidence_score`: 1.0 (if proven by test) | 0.8 (if observed)
+   - `stability_index`: HIGH | MEDIUM | LOW
+   - `tags`: relevant categories
+This safely creates a `.md` and `.meta.yaml` sidecar in `Knowledge_Raw`.
 
 ### Step 4.5: Technical Debt Tracking
 If you take a shortcut, hardcode a value, or discover code that needs refactoring later:
