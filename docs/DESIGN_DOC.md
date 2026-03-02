@@ -16,6 +16,8 @@ Architecture:
 Key Decisions:
 - [D1] Create `dev_log` and `journal` – Rationale: user global rules.
 - [D2] Add `dependencies` field to `FT` and `TSK` – Rationale: Enable cross-feature and cross-task dependency tracking beyond simple parent-child relationships.
+- [D3] Environment Setup: Use `python -m venv .venv` in `_blueprint_server` – Rationale: Isolates server dependencies from the rest of the system and follows standard Python practices.
+
 
 Interfaces:
 - Metadata Schema:

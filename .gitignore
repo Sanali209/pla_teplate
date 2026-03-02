@@ -1,3 +1,5 @@
 _blueprint/.vectordb/
 nul
 *.pyc
+.venv/
+__pycache__/
