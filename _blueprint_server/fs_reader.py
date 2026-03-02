@@ -14,7 +14,7 @@ import yaml
 
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
-BLUEPRINT_ROOT: Path = Path(__file__).parent.parent / "_blueprint"
+from config import BLUEPRINT_ROOT
 
 
 # ---------------------------------------------------------------------------

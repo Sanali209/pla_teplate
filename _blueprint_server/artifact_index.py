@@ -8,7 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fs_reader import BLUEPRINT_ROOT, read_frontmatter, read_body
+from config import BLUEPRINT_ROOT
+from fs_reader import read_frontmatter, read_body
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +44,15 @@ def _type_from_id(artifact_id: str) -> str | None:
 # Index building
 # ---------------------------------------------------------------------------
 
+_INDEX_CACHE: dict[str, dict[str, Any]] | None = None
+
+def get_index(force_refresh: bool = False) -> dict[str, dict[str, Any]]:
+    """Return the cached index, building it if it doesn't exist or if forced."""
+    global _INDEX_CACHE
+    if _INDEX_CACHE is None or force_refresh:
+        _INDEX_CACHE = build_index()
+    return _INDEX_CACHE
+
 def build_index() -> dict[str, dict[str, Any]]:
     """Scan all _blueprint/ markdown files and return a dict keyed by artifact id.
 
@@ -75,19 +85,19 @@ def build_index() -> dict[str, dict[str, Any]]:
 
 def get_by_id(artifact_id: str, index: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Return a single artifact dict or None if not found."""
-    idx = index if index is not None else build_index()
+    idx = index if index is not None else get_index()
     return idx.get(str(artifact_id))
 
 
 def get_by_type(atype: str, index: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Return all artifacts of a given type (e.g. 'Goal', 'Task')."""
-    idx = index if index is not None else build_index()
+    idx = index if index is not None else get_index()
     return [v for v in idx.values() if v["type"] == atype]
 
 
 def get_children(parent_id: str, index: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Return all artifacts whose parent_goal / parent_feat / parent_uc == parent_id."""
-    idx = index if index is not None else build_index()
+    idx = index if index is not None else get_index()
     results = []
     for v in idx.values():
         meta = v["meta"]
@@ -100,7 +110,7 @@ def get_children(parent_id: str, index: dict[str, Any] | None = None) -> list[di
 
 def get_trace_path(artifact_id: str, index: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Walk upward from artifact_id to the root Goal, returning the chain."""
-    idx = index if index is not None else build_index()
+    idx = index if index is not None else get_index()
     chain: list[dict[str, Any]] = []
     current_id = str(artifact_id)
     visited: set[str] = set()
@@ -123,7 +133,7 @@ def get_trace_path(artifact_id: str, index: dict[str, Any] | None = None) -> lis
 
 def to_json(index: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Serialize the index to a JSON-safe list (paths converted to strings)."""
-    idx = index if index is not None else build_index()
+    idx = index if index is not None else get_index()
     result = []
     for artifact_id, entry in idx.items():
         result.append({

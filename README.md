@@ -145,13 +145,19 @@ Add to your agent's MCP server config (usually `mcp_config.json` or `settings.js
 {
   "mcpServers": {
     "blueprint": {
-      "command": "python",
-      "args": ["d:/github/pla_teplate/_blueprint_server/server.py"],
-      "cwd": "d:/github/pla_teplate/_blueprint_server"
+      "command": "D:/github/pla_teplate/.venv/Scripts/python.exe",
+      "args": [
+        "D:/github/pla_teplate/_blueprint_server/server.py"
+      ],
+      "env": {
+        "BLUEPRINT_ROOT": "D:/github/foundation_template/_blueprint"
+      }
     }
   }
 }
 ```
+
+> **Note:** The server defaults to managing the `_blueprint` directory inside its own repository. If you want to use the server for a different project, change the `BLUEPRINT_ROOT` environment variable to point to the `_blueprint` folder inside your target project. Ensure you use the absolute path to the `.venv` Python executable created during setup.
 
 ### Option B: VS Code + Copilot (MCP extension)
 
@@ -163,8 +169,11 @@ Add to your agent's MCP server config (usually `mcp_config.json` or `settings.js
   "servers": {
     "blueprint": {
       "type": "stdio",
-      "command": "python",
-      "args": ["_blueprint_server/server.py"]
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["${workspaceFolder}/_blueprint_server/server.py"],
+      "env": {
+        "BLUEPRINT_ROOT": "${workspaceFolder}/_blueprint"
+      }
     }
   }
 }
