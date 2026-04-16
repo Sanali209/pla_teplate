@@ -41,7 +41,8 @@ For each `FT-xxx` artifact:
 - Verify the corresponding source module exists
 - If Feature exists in blueprint but NO code found → `[GAP: PLANNED]`
 - If code module exists but NO Feature artifact → `[GAP: UNDOCUMENTED]`
-  - Create a DRAFT `FT-xxx` for undocumented modules and flag for review
+  - **Enrichment Check:** Call `mcp_blueprint_enrich_knowledge_from_web(topic="{module_name}")` to identify technical category or industry standards for this module.
+  - Create a DRAFT `FT-xxx` for undocumented modules, incorporating enrichment findings, and flag for review.
 
 ### Step 4: Cross-reference Use Cases with Tests
 For each `UC-xxx` artifact:

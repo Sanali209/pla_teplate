@@ -20,7 +20,7 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     "Goal":     ["id", "title", "status"],
     "Feature":  ["id", "title", "status", "parent_goal"],
     "Research": ["id", "hypothesis", "verdict", "parent_goal"],
-    "UseCase":  ["id", "title", "status", "parent_feat"],
+    "UseCase":  ["id", "title", "status", "parent_feat", "dependencies"],
     "Task":     ["id", "title", "status", "parent_uc"],
 }
 
@@ -137,6 +137,36 @@ def validate_traceability(index: dict[str, Any] | None = None) -> ValidationRepo
                     detail=f"Parent reference '{pfield}: {parent_id}' does not exist in the index.",
                 ))
 
+        # ── G8: Dependency Check (Horizontal Traceability) ────────────────────
+        deps = meta.get("dependencies")
+        if deps is None:
+            # Not an error, just assume empty for validation
+            deps = []
+        
+        if isinstance(deps, str):
+             # Handle string representation of list if parsed lazily
+             deps = [d.strip() for d in deps.strip("[]").split(",") if d.strip()]
+        
+        for dep_id in deps:
+            if dep_id not in idx:
+                report.errors.append(ValidationError(
+                    artifact_id=artifact_id,
+                    artifact_type=atype,
+                    path=path,
+                    error_type="ORPHAN",
+                    detail=f"Dependency '{dep_id}' does not exist in the index.",
+                ))
+            elif meta.get("status") == "DONE":
+                dep_entry = idx[dep_id]
+                if dep_entry["meta"].get("status") != "DONE":
+                    report.errors.append(ValidationError(
+                        artifact_id=artifact_id,
+                        artifact_type=atype,
+                        path=path,
+                        error_type="GATE_VIOLATION",
+                        detail=f"Cannot mark '{artifact_id}' as DONE while dependency '{dep_id}' is '{dep_entry['meta'].get('status')}'.",
+                    ))
+
         # ── G1: Task Gate ─────────────────────────────────────────────────────
         if atype == "Task":
             parent_uc_id = str(meta.get("parent_uc", ""))
@@ -178,9 +208,49 @@ def validate_traceability(index: dict[str, Any] | None = None) -> ValidationRepo
                             f"but no Research Spike with verdict SUCCESS or PENDING was found "
                             f"for goal '{feat_goal}'. Run P2 Research protocol first."
                         ),
-                    ))
+                ))
 
-        # ── W3: Soft Warning — NEEDS_FIX without feedback file ────────────────
+    # ── G9: Circular Dependency Check ─────────────────────────────────────────
+    graph: dict[str, list[str]] = {}
+    for aid, entry in idx.items():
+        meta = entry["meta"]
+        deps = meta.get("dependencies", [])
+        if isinstance(deps, str):
+            deps = [d.strip() for d in deps.strip("[]").split(",") if d.strip()]
+        graph[aid] = deps
+
+    def find_cycle(node_id: str, visited: set[str], stack: set[str]) -> list[str] | None:
+        visited.add(node_id)
+        stack.add(node_id)
+        for neighbor in graph.get(node_id, []):
+            if neighbor not in visited:
+                cycle = find_cycle(neighbor, visited, stack)
+                if cycle:
+                    cycle.append(node_id)
+                    return cycle
+            elif neighbor in stack:
+                return [neighbor, node_id]
+        stack.remove(node_id)
+        return None
+
+    visited_nodes: set[str] = set()
+    for art_id in graph:
+        if art_id not in visited_nodes:
+            cycle_found = find_cycle(art_id, visited_nodes, set())
+            if cycle_found:
+                # cycle_found is [start, ..., end, start] in reverse order
+                cycle_str = " -> ".join(reversed(cycle_found))
+                entry = idx[art_id]
+                report.errors.append(ValidationError(
+                    artifact_id=art_id,
+                    artifact_type=entry["type"],
+                    path=str(entry["path"]),
+                    error_type="GATE_VIOLATION",
+                    detail=f"Circular dependency detected: {cycle_str}",
+                ))
+                break # Report first cycle found
+
+    # ── W3: Soft Warning — NEEDS_FIX without feedback file ────────────────
         status = str(meta.get("status", ""))
         if status in ("NEEDS_FIX", "REJECTED"):
             from config import BLUEPRINT_ROOT

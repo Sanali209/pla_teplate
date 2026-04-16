@@ -4,6 +4,7 @@ title: "{{FEATURE TITLE}}"
 status: DRAFT
 priority: HIGH
 parent_goal: GL-{{NUMBER}}
+dependencies: []              # [FT-xxx] List of features this depends on
 research_required: false
 created_at: {{ISO_TIMESTAMP}}
 revision_count: 1

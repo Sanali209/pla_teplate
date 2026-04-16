@@ -11,6 +11,7 @@ Run P3 when a Feature has `status: APPROVED` and all research spikes are resolve
 
 ### Step 1: Identify Scenarios & Domain Context
 1. Call `mcp_blueprint_search_rag(query="{Feature Title} domain concepts AND architecture patterns")` to load any foundational rules or terminology for this feature.
+   - **Stability Check:** If any retrieved knowledge has `meta_stability_index: LOW`, add a `> [!WARNING]` block to the resulting Use Case artifacts alerting the team to volatile implementation patterns.
 2. For the target Feature, identify 2–5 distinct user scenarios:
    - **Happy Path** — the normal successful interaction
    - **Alternative Flows** — valid but non-standard paths

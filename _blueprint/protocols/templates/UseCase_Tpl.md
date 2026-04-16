@@ -3,6 +3,7 @@ id: UC-{{NUMBER}}
 title: "{{SCENARIO TITLE}}"
 status: DRAFT
 parent_feat: FT-{{NUMBER}}
+dependencies: []
 actors:
   - "User"
   - "System"
@@ -45,7 +46,7 @@ graph TD
 ## System States
 - **Before:** `{{state_before}}`
 - **After success:** `{{state_after_success}}`
-- **After failure:** `{{state_after_failure}}`
+- **After failure:** `["{{state_after_failure}}"]`
 
 ## Linked Tasks
 <!-- Agent: populate after P4_Dev_Sync generates TSK artifacts -->

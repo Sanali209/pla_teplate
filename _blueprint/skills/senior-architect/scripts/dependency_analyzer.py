@@ -45,18 +45,56 @@ class DependencyAnalyzer:
             print(f"✓ Target validated: {self.target_path}")
     
     def analyze(self):
-        """Perform the main analysis or operation"""
+        """Scan markdown files for dependency links in YAML front-matter"""
         if self.verbose:
-            print("📊 Analyzing...")
+            print("📊 Scanning artifacts for dependencies...")
         
-        # Main logic here
         self.results['status'] = 'success'
         self.results['target'] = str(self.target_path)
-        self.results['findings'] = []
+        self.results['graph'] = {}
         
-        # Add analysis results
+        # Walk through _blueprint directory
+        for root, dirs, files in os.walk(self.target_path):
+            for file in files:
+                if file.endswith('.md'):
+                    path = Path(root) / file
+                    self.process_file(path)
+        
         if self.verbose:
-            print(f"✓ Analysis complete: {len(self.results.get('findings', []))} findings")
+            print(f"✓ Analysis complete: {len(self.results['graph'])} artifacts indexed")
+
+    def process_file(self, path: Path):
+        """Extract ID and dependencies from a single file"""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # Basic YAML extraction logic
+                if content.startswith('---'):
+                    parts = content.split('---')
+                    if len(parts) >= 3:
+                        yaml_part = parts[1]
+                        lines = yaml_part.strip().split('\n')
+                        metadata = {}
+                        for line in lines:
+                            if ':' in line:
+                                k, v = line.split(':', 1)
+                                metadata[k.strip()] = v.strip()
+                        
+                        art_id = metadata.get('id')
+                        if art_id:
+                            deps = metadata.get('dependencies', '[]')
+                            # Clean up [FT-001, FT-002] format
+                            deps = deps.strip('[]').split(',')
+                            deps = [d.strip() for d in deps if d.strip()]
+                            
+                            self.results['graph'][art_id] = {
+                                'file': str(path),
+                                'dependencies': deps,
+                                'parent': metadata.get('parent_goal') or metadata.get('parent_feat') or metadata.get('parent_uc')
+                            }
+        except Exception as e:
+            if self.verbose:
+                print(f"⚠️ Error processing {path}: {e}")
     
     def generate_report(self):
         """Generate and display the report"""

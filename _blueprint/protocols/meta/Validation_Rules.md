@@ -18,6 +18,8 @@ Any agent action that violates these rules will be rejected with an error.
 | **G5: Field Completeness** | Required fields (per Metadata_Schema.md) must all be present and non-empty | "Missing required field '{field}' for artifact type '{type}'." |
 | **G6: Forbidden Transition** | `APPROVED → DRAFT/REVIEW` is forbidden; `DONE → any` except ARCHIVED | "Forbidden transition: cannot move from {from} → {to}." |
 | **G7: ID Monotonicity** | IDs must be zero-padded sequential integers; no gaps allowed | "Non-sequential ID detected: expected {expected}, got {actual}." |
+| **G8: Dependency Gate** | Block completion (DONE) if horizontal `dependencies` are not DONE | "Gate blocked: unmet dependency tasks." |
+| **G9: Circularity Gate** | Block any action if artifact part of a circular dependency graph | "Gate blocked: circular dependency detected." |
 
 ---
 

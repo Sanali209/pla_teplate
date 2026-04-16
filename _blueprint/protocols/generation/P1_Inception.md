@@ -26,6 +26,7 @@ For each identified business goal from P0, create a file using `create_artifact`
 For each business goal, identify 2–5 high-level Features. Create `FT-xxx` artifacts:
 - **Prefix MUST be FT-** (e.g., `FT-001`)
 - Set `parent_goal` to the linked GL ID
+- **Identify Feature Dependencies:** Check if a feature requires another feature to be implemented first. Document this in the `dependencies: [FT-xxx]` field.
 - Mark `research_required: true` for any Feature with unknown technical approach
 - Keep titles concise: `Auth Module`, `PDF Generator`, `Payment Flow`
 
