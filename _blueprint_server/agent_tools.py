@@ -18,6 +18,23 @@ from fs_reader import read_frontmatter, write_frontmatter, patch_frontmatter, re
 from artifact_index import build_index, ID_PREFIXES
 from validate_traceability import validate_traceability, check_transition, REQUIRED_FIELDS
 from logger import tool_call, tool_ok, tool_error, gate_blocked, artifact_created, status_change, validate_result
+import asyncio
+
+_INDEX_CACHE: dict[str, dict] | None = None
+_INDEX_CACHE_LOCK = asyncio.Lock()
+
+async def get_cached_index() -> dict[str, dict]:
+    """Thread-safe cached index build."""
+    global _INDEX_CACHE
+    if _INDEX_CACHE is None:
+        async with _INDEX_CACHE_LOCK:
+            if _INDEX_CACHE is None:  # double-checked locking
+                import time
+                start = time.time()
+                from artifact_index import get_index
+                _INDEX_CACHE = get_index(force_refresh=True)
+                print(f"Index built in {time.time()-start:.1f}s ({len(_INDEX_CACHE)} artifacts)")
+    return _INDEX_CACHE
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +79,7 @@ async def _create_artifact(args: dict) -> list[TextContent]:
         tool_error("create_artifact", msg)
         return _err_text(msg)
 
-    idx = build_index()
+    idx = await get_cached_index()
 
     if parent_id and parent_id not in idx:
         msg = f"Parent '{parent_id}' not found. Create the parent first."
@@ -115,6 +132,9 @@ async def _create_artifact(args: dict) -> list[TextContent]:
     write_frontmatter(target_file, full_meta, content)
     artifact_created(aid, atype, str(target_file))
     tool_ok("create_artifact", f"{aid} ({atype}) → {target_file.name}")
+    # Invalidate cache since we wrote a new file
+    global _INDEX_CACHE
+    _INDEX_CACHE = None
     return _text(f"✅ Artifact '{aid}' ({atype}) created at {target_file}")
 
 
@@ -130,7 +150,7 @@ async def _update_status(args: dict) -> list[TextContent]:
         tool_error("update_status", msg)
         return _err_text(msg)
 
-    idx   = build_index()
+    idx   = await get_cached_index()
     entry = idx.get(aid)
     if not entry:
         msg = f"Artifact '{aid}' not found."
@@ -161,11 +181,21 @@ async def _update_status(args: dict) -> list[TextContent]:
     )
     status_change(aid, old_status, new_status)
     tool_ok("update_status", f"{aid}: {old_status} → {new_status}")
-    return _text(f"✅ '{aid}' status updated: {old_status} → {new_status}")
+    # Invalidate cache since we modified a file
+    global _INDEX_CACHE
+    _INDEX_CACHE = None
+
+    return [TextContent(type="text", text=f"Status of {aid} changed from {old_status} to {new_status}")]
 
 
 async def _validate_all(_args: dict) -> list[TextContent]:
     tool_call("validate_all", {})
+    # We must refresh the cache unconditionally because validate_traceability
+    # reads from the file system and generates a fresh report
+    global _INDEX_CACHE
+    _INDEX_CACHE = None
+    idx = await get_cached_index()
+
     report = validate_traceability()
     validate_result(len(report.errors))
     return _text(report.summary())
@@ -175,7 +205,7 @@ async def _run_self_critique(args: dict) -> list[TextContent]:
     artifact_id = args.get("artifact_id", "")
     tool_call("run_self_critique", {"artifact_id": artifact_id})
 
-    idx   = build_index()
+    idx   = await get_cached_index()
     entry = idx.get(artifact_id)
     if not entry:
         msg = f"Artifact '{artifact_id}' not found."
@@ -223,18 +253,19 @@ async def _run_self_critique(args: dict) -> list[TextContent]:
 async def _get_backlog(_args: dict) -> list[TextContent]:
     tool_call("get_backlog", {})
     backlog_dir = BLUEPRINT_ROOT / "execution" / "backlog"
-    tasks = []
-    if backlog_dir.exists():
-        for f in backlog_dir.glob("TSK-*.md"):
-            meta, _ = read_frontmatter(f)
+    idx = await get_cached_index()
+    
+    lines = ["# Backlog (Tasks merely reflecting _blueprint status)", ""]
+    for task_file in backlog_dir.glob("*.md"):
+            meta = read_frontmatter(task_file)
             if meta:
-                tasks.append(
+                lines.append(
                     f"- {meta.get('id', 'Unknown')}: {meta.get('title', 'No Title')} "
                     f"[Status: {meta.get('status', 'UNKNOWN')}]"
                 )
-    if not tasks:
+    if len(lines) == 2:
         return _text("Backlog is empty.")
-    return _text("Backlog Tasks:\n" + "\n".join(tasks))
+    return _text("\n".join(lines))
 
 
 async def _start_sprint(args: dict) -> list[TextContent]:
@@ -242,7 +273,7 @@ async def _start_sprint(args: dict) -> list[TextContent]:
     goal = args.get("goal", "No goal specified.")
     tool_call("start_sprint", {"task_ids": task_ids, "goal": goal})
     
-    idx = build_index()
+    idx = await get_cached_index()
     valid_tasks = []
     for tid in task_ids:
         entry = idx.get(tid)
@@ -330,7 +361,7 @@ async def _complete_task(args: dict) -> list[TextContent]:
     task_id = args.get("task_id", "")
     tool_call("complete_task", {"task_id": task_id})
     
-    idx = build_index()
+    idx = await get_cached_index()
     entry = idx.get(task_id)
     if not entry or entry["type"] != "Task":
         return _err_text(f"Task '{task_id}' not found.")
@@ -361,7 +392,7 @@ async def _search_artifacts(args: dict) -> list[TextContent]:
     parent_id = args.get("parent_id", "")
     tool_call("search_artifacts", {"type": atype, "parent_id": parent_id})
     
-    idx = build_index()
+    idx = await get_cached_index()
     results = []
     for aid, entry in idx.items():
         meta = entry.get("meta", {})
@@ -387,7 +418,7 @@ async def _get_traceability_tree(args: dict) -> list[TextContent]:
     artifact_id = args.get("artifact_id", "")
     tool_call("get_traceability_tree", {"artifact_id": artifact_id})
     
-    idx = build_index()
+    idx = await get_cached_index()
     if artifact_id not in idx:
         return _err_text(f"Artifact '{artifact_id}' not found.")
         
@@ -588,7 +619,7 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
     
     for i, (p, src_type) in enumerate(files_to_process):
         if server:
-            ctx = server.request_context.get()
+            ctx = server.request_context
             if ctx and ctx.meta and ctx.meta.progressToken:
                 try:
                     await ctx.session.send_progress_notification(
@@ -615,7 +646,7 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
             
     if server:
         # Final progress ping before heavy upsert
-        ctx = server.request_context.get()
+        ctx = server.request_context
         if ctx and ctx.meta and ctx.meta.progressToken:
             try:
                 await ctx.session.send_progress_notification(
@@ -630,6 +661,11 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
          return _text("No documents found to index.")
          
     try:
+        print(f"DEBUG: Upserting {len(docs)} docs, {len(metadatas)} metadatas, {len(ids)} ids")
+        print(f"DEBUG types: docs={type(docs)}, ids={type(ids)}, metadatas={type(metadatas)}")
+        if len(docs) > 0:
+            print(f"DEBUG first types: doc={type(docs[0])}, id={type(ids[0])}, meta={type(metadatas[0])}")
+        
         # Upsert allows overwriting existing IDs
         collection.upsert(
             documents=docs,
@@ -640,7 +676,9 @@ async def _index_knowledge(args: dict) -> list[TextContent]:
         tool_ok("index_knowledge", msg)
         return _text(msg)
     except Exception as e:
-         return _err_text(f"Failed to index documents: {e}")
+         import traceback
+         tb = traceback.format_exc()
+         return _err_text(f"Failed to index documents: {e}\n\nTraceback:\n{tb}")
 
 async def _search_rag(args: dict) -> list[TextContent]:
     query = args.get("query", "")
@@ -755,7 +793,7 @@ async def _get_next_id(args: dict) -> list[TextContent]:
         tool_error("get_next_id", msg)
         return _err_text(msg)
 
-    idx = build_index()
+    idx = await get_cached_index()
     max_num = 0
     for art_id in idx:
         if art_id.startswith(prefix + "-"):
